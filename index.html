@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Therapy Team Tracker (Auto-Weeks)</title>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .list-move { transition: transform 0.5s; }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- FIREBASE CONFIGURATION ---
+        let firebaseConfig;
+        
+        // --- THERAPY APP ID ---
+        let appId = 'default-therapy-app'; 
+
+        if (typeof __firebase_config !== 'undefined') {
+            firebaseConfig = JSON.parse(__firebase_config);
+            if (typeof __app_id !== 'undefined') appId = __app_id;
+        } else {
+            // Live Config for GitHub Hosting
+            firebaseConfig = { 
+                apiKey: "AIzaSyBAeNRpRltRm0hrP5A0hFm6srEGOwaSJIg",
+                authDomain: "cardio-tracker-dec46.firebaseapp.com",
+                projectId: "cardio-tracker-dec46",
+                storageBucket: "cardio-tracker-dec46.firebasestorage.app",
+                messagingSenderId: "484278449584",
+                appId: "1:484278449584:web:ad579ed66c95d7e3065275"
+            };
+        }
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+        // --- Icons ---
+        const Icon = ({ path, color = "currentColor", size = 18, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {path}
+            </svg>
+        );
+
+        const PlusIcon = () => <Icon path={<><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></>} />;
+        const TrashIcon = () => <Icon path={<><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></>} />;
+        const TrophyIcon = ({className}) => <Icon className={className} size={32} path={<><path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10"></path><path d="M17 4v7a5 5 0 0 1-10 0V4"></path><line x1="10" y1="2" x2="10" y2="4"></line><line x1="14" y1="2" x2="14" y2="4"></line><path d="M5 9h2"></path><path d="M17 9h2"></path></>} />;
+        const PhoneIcon = () => <Icon size={16} path={<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>} />;
+        const ClockIcon = () => <Icon size={16} path={<><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></>} />;
+        const UsersIcon = () => <Icon size={16} path={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></>} />;
+        const FileCheckIcon = () => <Icon size={16} path={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 15l2 2 4-4"></path></>} />;
+        const FileTextIcon = () => <Icon size={16} path={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></>} />;
+        const StarIcon = () => <Icon size={16} path={<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>} />;
+        const BriefcaseIcon = () => <Icon size={16} path={<><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></>} />;
+        const RefreshIcon = () => <Icon size={16} path={<path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />} />;
+        const LockIcon = () => <Icon size={16} path={<><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></>} />;
+        const UnlockIcon = () => <Icon size={16} path={<><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></>} />;
+        const CalendarIcon = () => <Icon size={16} path={<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></>} />;
+        const LayoutDashboardIcon = () => <Icon size={16} path={<><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></>} />;
+        const UserPlusIcon = () => <Icon size={16} path={<><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></>} />;
+        const HistoryIcon = () => <Icon size={16} path={<><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></>} />;
+        const CloudCheckIcon = () => <Icon size={12} path={<><path d="M19 11a4 4 0 1 1-3.9 3.9"/><path d="M15.1 14.9L19 18.8l5.1-5.1"/><path d="M19 11a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v.1A5 5 0 0 0 1 12a5 5 0 0 0 5 5h3"/></>} />;
+
+        // --- Constants & Logic ---
+        const POINTS = {
+            DIAL: 1, TALK_MINUTE: 1.5, POP: 250, UNIQUE: 100, PACKET: 100, INTERVIEW: 50, REFERRAL: 100
+        };
+        const GOAL = 1000;
+
+        const calculateScore = (r) => {
+            if(!r) return 0;
+            const dialPts = (r.dials || 0) * POINTS.DIAL;
+            const talkTimeMinutes = ((r.talkHours || 0) * 60) + (r.talkMinutes || 0);
+            const talkPts = talkTimeMinutes * POINTS.TALK_MINUTE;
+            const popPts = (r.pop || 0) * POINTS.POP;
+            const uniquePts = (r.uniques || 0) * POINTS.UNIQUE;
+            const packetPts = (r.packets || 0) * POINTS.PACKET;
+            const interviewPts = (r.interviews || 0) * POINTS.INTERVIEW;
+            const referralPts = (r.referrals || 0) * POINTS.REFERRAL;
+            return Math.floor(dialPts + talkPts + popPts + uniquePts + packetPts + interviewPts + referralPts);
+        };
+
+        const getWeekId = (d = new Date()) => {
+            const date = new Date(d);
+            const day = date.getDay(); 
+            const diff = date.getDate() - day; 
+            const sunday = new Date(date.setDate(diff));
+            return `Week of ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+        };
+
+        const formatWeekEnding = (weekId) => {
+            if (!weekId || !weekId.startsWith('Week of ')) return weekId;
+            try {
+                const dateStr = weekId.replace('Week of ', '');
+                const sunday = new Date(dateStr);
+                const saturday = new Date(sunday);
+                saturday.setDate(sunday.getDate() + 6);
+                return saturday.toLocaleDateString('en-US'); // Defaults to M/D/YYYY
+            } catch (e) {
+                return weekId;
+            }
+        };
+
+        // --- Helper: Robust Number Input ---
+        const NumberInput = ({ value, onChange, disabled, color, className }) => {
+            const safeValue = value === undefined || value === null ? '' : value;
+            const [localValue, setLocalValue] = useState(safeValue);
+            
+            useEffect(() => { setLocalValue(safeValue); }, [safeValue]);
+
+            const handleChange = (e) => setLocalValue(e.target.value);
+            const handleBlur = () => { if (localValue !== safeValue) onChange(localValue); };
+            const handleKeyDown = (e) => { if (e.key === 'Enter') e.target.blur(); };
+
+            return (
+                <input type="number" value={localValue} onChange={handleChange} onBlur={handleBlur} onKeyDown={handleKeyDown} disabled={disabled}
+                    className={`w-full bg-slate-900/50 border border-slate-600 rounded-lg px-2 py-1 text-center text-slate-200 focus:outline-none focus:ring-1 ${color} ${disabled ? 'opacity-50 cursor-default' : ''} ${className}`} 
+                />
+            );
+        };
+
+        // --- Admin Components ---
+        const RosterManager = ({ roster, onAdd, onDelete }) => {
+            const [newName, setNewName] = useState("");
+            const handleAdd = (e) => {
+                e.preventDefault();
+                if(newName.trim()) { onAdd(newName.trim()); setNewName(""); }
+            };
+            return (
+                <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 h-full">
+                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><UserPlusIcon /> Manage Team Roster</h3>
+                    <form onSubmit={handleAdd} className="flex gap-2 mb-6">
+                        <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Recruiter Name" className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none" />
+                        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold transition-colors">Add</button>
+                    </form>
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                        {roster.length === 0 && <p className="text-slate-500 text-sm text-center italic">No team members yet.</p>}
+                        {roster.map(r => (
+                            <div key={r.id} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 group">
+                                <span className="font-medium text-slate-200">{r.name}</span>
+                                <button onClick={() => onDelete(r.id)} className="text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1" title="Remove"><TrashIcon size={16} /></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminDashboard = ({ allWeeks, roster, onAddRecruiter, onDeleteRecruiter }) => {
+            const [subTab, setSubTab] = useState('overview'); 
+            const [selectedRecruiter, setSelectedRecruiter] = useState('');
+            const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'asc' });
+
+            const flatData = useMemo(() => {
+                let data = [];
+                allWeeks.forEach(week => {
+                    let weekRecruiters = [];
+                    if (week.stats) {
+                        Object.keys(week.stats).forEach(rId => {
+                            const rosterMember = roster.find(m => m.id === rId);
+                            const rData = week.stats[rId];
+                            weekRecruiters.push({ ...rData, name: rosterMember ? rosterMember.name : "Unknown", weekId: week.id, createdAt: week.createdAt });
+                        });
+                    } else if (week.roster) {
+                        week.roster.forEach(r => weekRecruiters.push({ ...r, weekId: week.id, createdAt: week.createdAt }));
+                    }
+                    data = [...data, ...weekRecruiters];
+                });
+                return data;
+            }, [allWeeks, roster]);
+
+            const uniqueRecruiters = useMemo(() => {
+                const names = new Set();
+                flatData.forEach(r => names.add(r.name));
+                return Array.from(names).sort();
+            }, [flatData]);
+
+            useEffect(() => {
+                if (subTab === 'history' && !selectedRecruiter && uniqueRecruiters.length > 0) setSelectedRecruiter(uniqueRecruiters[0]);
+            }, [subTab, uniqueRecruiters, selectedRecruiter]);
+
+            const recruiterStats = useMemo(() => {
+                if(subTab === 'overview' || !selectedRecruiter) return null;
+                const entries = flatData.filter(r => r.name === selectedRecruiter);
+                if(entries.length === 0) return null;
+                const totals = entries.reduce((acc, curr) => ({
+                    score: acc.score + calculateScore(curr),
+                    dials: acc.dials + (curr.dials || 0),
+                    talkMins: acc.talkMins + ((curr.talkHours||0)*60 + (curr.talkMinutes||0)),
+                    pop: acc.pop + (curr.pop || 0),
+                    uniques: acc.uniques + (curr.uniques || 0),
+                    packets: acc.packets + (curr.packets || 0),
+                    interviews: acc.interviews + (curr.interviews || 0),
+                    referrals: acc.referrals + (curr.referrals || 0),
+                }), { score:0, dials:0, talkMins:0, pop:0, uniques:0, packets:0, interviews:0, referrals:0 });
+                const count = entries.length;
+                return {
+                    count,
+                    avgScore: Math.round(totals.score/count),
+                    avgDials: Math.round(totals.dials/count),
+                    avgTalkMins: Math.round(totals.talkMins/count),
+                    avgPop: (totals.pop/count).toFixed(1),
+                    avgUniques: (totals.uniques/count).toFixed(1),
+                    avgPackets: (totals.packets/count).toFixed(1),
+                    avgInterviews: (totals.interviews/count).toFixed(1),
+                    avgReferrals: (totals.referrals/count).toFixed(1),
+                };
+            }, [flatData, selectedRecruiter, subTab]);
+
+            const tableRows = useMemo(() => {
+                if (subTab === 'overview') {
+                    const agg = {};
+                    flatData.forEach(r => {
+                        if(!agg[r.name]) agg[r.name] = { name: r.name, count: 0, totalScore: 0, dials: 0, talkMins: 0, pop: 0, uniques: 0, packets: 0, interviews: 0 };
+                        const s = calculateScore(r);
+                        agg[r.name].count++;
+                        agg[r.name].totalScore += s;
+                        agg[r.name].dials += (r.dials||0);
+                        agg[r.name].talkMins += ((r.talkHours||0)*60 + (r.talkMinutes||0));
+                        agg[r.name].pop += (r.pop||0);
+                        agg[r.name].uniques += (r.uniques||0);
+                        agg[r.name].packets += (r.packets||0);
+                        agg[r.name].interviews += (r.interviews||0);
+                    });
+                    return Object.values(agg).map(r => ({
+                        id: r.name, name: r.name, weeks: r.count,
+                        score: Math.round(r.totalScore/r.count),
+                        dials: Math.round(r.dials/r.count),
+                        talkMins: Math.round(r.talkMins/r.count),
+                        pop: (r.pop/r.count).toFixed(1),
+                        uniques: (r.uniques/r.count).toFixed(1),
+                        packets: (r.packets/r.count).toFixed(1),
+                        interviews: (r.interviews/r.count).toFixed(1)
+                    }));
+                } else {
+                    if(!selectedRecruiter) return [];
+                    return flatData.filter(r => r.name === selectedRecruiter).map(r => ({ ...r, score: calculateScore(r), talkMins: ((r.talkHours||0)*60 + (r.talkMinutes||0)) }));
+                }
+            }, [flatData, selectedRecruiter, subTab]);
+
+            const sortedRows = useMemo(() => {
+                return [...tableRows].sort((a,b) => {
+                    const valA = sortConfig.key === 'createdAt' ? (a.createdAt?.seconds || 0) : a[sortConfig.key];
+                    const valB = sortConfig.key === 'createdAt' ? (b.createdAt?.seconds || 0) : b[sortConfig.key];
+                    if(valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                    if(valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }, [tableRows, sortConfig]);
+
+            const handleSort = (key) => {
+                let direction = 'desc';
+                if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
+                if (key === 'createdAt' && sortConfig.key !== 'createdAt') direction = 'asc'; 
+                setSortConfig({ key, direction });
+            };
+
+            const SortHeader = ({ label, sKey }) => (
+                <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort(sKey)}>
+                    <div className="flex items-center gap-1">{label} <span className="text-[10px] text-blue-400">▼</span></div>
+                </th>
+            );
+
+             const StatCard = ({ label, value, sub }) => (
+                <div className="bg-slate-700/50 p-4 rounded-xl border border-slate-600 flex flex-col items-center">
+                    <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</span>
+                    <span className="text-2xl font-bold text-white mt-1">{value}</span>
+                    {sub && <span className="text-xs text-slate-500">{sub}</span>}
+                </div>
+            );
+
+            return (
+                 <div className="flex flex-col lg:flex-row gap-6 fade-in">
+                    <div className="flex-1 space-y-6">
+                        <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
+                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+                                <h2 className="text-2xl font-bold text-white flex gap-2"><LayoutDashboardIcon className="text-blue-400"/> Admin Backend</h2>
+                            </div>
+                            <div className="flex space-x-1 bg-slate-900/50 p-1 rounded-xl w-full md:w-fit">
+                                <button onClick={() => setSubTab('overview')} className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${subTab === 'overview' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}><LayoutDashboardIcon size={14} /> Team Overview</button>
+                                <button onClick={() => setSubTab('history')} className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${subTab === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}><HistoryIcon size={14} /> Recruiter History</button>
+                            </div>
+                        </div>
+
+                        {subTab === 'history' && (
+                            <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 flex items-center gap-4">
+                                <label className="text-sm font-bold text-slate-400 uppercase">Select Recruiter:</label>
+                                <div className="relative w-64">
+                                    <select value={selectedRecruiter} onChange={(e) => { setSelectedRecruiter(e.target.value); setSortConfig({ key: 'createdAt', direction: 'asc' }); }} className="w-full bg-slate-900 border border-slate-600 text-white pl-3 pr-8 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none appearance-none">
+                                        <option value="" disabled>Choose...</option>
+                                        {uniqueRecruiters.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                    <div className="absolute right-3 top-3 text-slate-400 pointer-events-none"><div className="w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-4 border-t-slate-400"></div></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {subTab === 'history' && recruiterStats && (
+                            <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
+                                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><div className="bg-blue-600 w-8 h-8 rounded-full flex items-center justify-center text-sm">{selectedRecruiter.charAt(0)}</div>{selectedRecruiter} <span className="text-sm font-normal text-slate-400">({recruiterStats.count} weeks tracked)</span></h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+                                    <StatCard label="Avg Score" value={recruiterStats.avgScore} />
+                                    <StatCard label="Avg Dials" value={recruiterStats.avgDials} />
+                                    <StatCard label="Avg Talk" value={recruiterStats.avgTalkMins} sub="min"/>
+                                    <StatCard label="Avg POP" value={recruiterStats.avgPop} />
+                                    <StatCard label="Avg Uniques" value={recruiterStats.avgUniques} />
+                                    <StatCard label="Avg Pkts" value={recruiterStats.avgPackets} />
+                                    <StatCard label="Avg Intv" value={recruiterStats.avgInterviews} />
+                                    <StatCard label="Avg Refs" value={recruiterStats.avgReferrals} />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 overflow-hidden overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-900/50 text-slate-400 text-sm uppercase">
+                                    <tr>
+                                        <SortHeader label={subTab==='overview'?"Name":"Week Ending"} sKey={subTab==='overview'?"name":"createdAt"} />
+                                        <SortHeader label="Score" sKey="score" />
+                                        <SortHeader label="Dials" sKey="dials" />
+                                        <SortHeader label="Talk (m)" sKey="talkMins" />
+                                        <SortHeader label="POP" sKey="pop" />
+                                        <SortHeader label="Uniq" sKey="uniques" />
+                                        <SortHeader label="Intv" sKey="interviews" />
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-700 text-sm">
+                                    {sortedRows.map((r, i) => (
+                                        <tr key={i} className="hover:bg-slate-700/50">
+                                            <td className="p-4 font-bold text-white">{subTab==='overview'?r.name:formatWeekEnding(r.weekId)}</td>
+                                            <td className="p-4 text-emerald-400 font-bold">{r.score}</td>
+                                            <td className="p-4 text-slate-300">{r.dials}</td>
+                                            <td className="p-4 text-orange-300">{r.talkMins}</td>
+                                            <td className="p-4 text-slate-400">{r.pop}</td>
+                                            <td className="p-4 text-slate-400">{r.uniques}</td>
+                                            <td className="p-4 text-slate-400">{r.interviews}</td>
+                                        </tr>
+                                    ))}
+                                    {sortedRows.length === 0 && <tr><td colSpan="7" className="p-8 text-center text-slate-500">No data found.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div className="w-full lg:w-80 flex-shrink-0">
+                        <RosterManager roster={roster} onAdd={onAddRecruiter} onDelete={onDeleteRecruiter} />
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
+            const [pass, setPass] = useState('');
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+                    <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-600 w-full max-w-sm">
+                        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><LockIcon /> Admin Access</h2>
+                        {/* --- PASSWORD CHECK HERE --- */}
+                        <form onSubmit={(e)=>{e.preventDefault(); if(pass==='YankeesDrool'){onLogin();onClose();setPass('');} else alert("Incorrect");}} className="space-y-4">
+                            <input type="password" placeholder="Enter Password" value={pass} onChange={(e)=>setPass(e.target.value)} className="w-full bg-slate-900 border border-slate-600 p-3 rounded-lg text-white focus:ring-blue-500 outline-none" autoFocus />
+                            <div className="flex gap-3"><button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-slate-700 rounded-lg text-slate-300">Cancel</button><button type="submit" className="flex-1 px-4 py-2 bg-blue-600 rounded-lg text-white font-bold">Unlock</button></div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        function TherapyTracker() {
+            const [user, setUser] = useState(null);
+            const [currentWeekId, setCurrentWeekId] = useState(getWeekId());
+            const [selectedWeekId, setSelectedWeekId] = useState(getWeekId()); 
+            const [roster, setRoster] = useState([]);
+            const [weekData, setWeekData] = useState({}); 
+            const [allWeeks, setAllWeeks] = useState([]); 
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [showLogin, setShowLogin] = useState(false);
+            const [activeTab, setActiveTab] = useState('tracker'); 
+            const [isSaving, setIsSaving] = useState(false);
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await auth.signInWithCustomToken(__initial_auth_token);
+                    else await auth.signInAnonymously();
+                };
+                initAuth();
+                return auth.onAuthStateChanged(setUser);
+            }, []);
+
+            useEffect(() => {
+                if(!user) return;
+                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('roster')
+                    .onSnapshot(snap => {
+                        const r = [];
+                        snap.forEach(d => r.push({ id: d.id, ...d.data() }));
+                        r.sort((a,b) => a.name.localeCompare(b.name));
+                        setRoster(r);
+                    });
+                return () => unsub();
+            }, [user]);
+
+            useEffect(() => {
+                if(!user) return;
+                const docRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('weeks').doc(selectedWeekId);
+                const unsub = docRef.onSnapshot(doc => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        setWeekData(data.stats || {});
+                    } else {
+                        setWeekData({});
+                    }
+                });
+                return () => unsub();
+            }, [user, selectedWeekId]);
+
+            useEffect(() => {
+                if(!user) return;
+                const colRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('weeks');
+                const unsub = colRef.onSnapshot(snap => {
+                    const weeks = [];
+                    snap.forEach(d => weeks.push({ id: d.id, ...d.data() }));
+                    weeks.sort((a,b) => {
+                         const dateA = new Date(a.id.replace('Week of ', ''));
+                         const dateB = new Date(b.id.replace('Week of ', ''));
+                         return dateB - dateA;
+                    });
+                    setAllWeeks(weeks);
+                });
+                return () => unsub();
+            }, [user]);
+
+            const handleStatChange = async (recruiterId, field, value) => {
+                if (selectedWeekId !== currentWeekId) return; 
+                setIsSaving(true);
+                const cleanVal = value === '' ? 0 : parseInt(value);
+                const weekDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('weeks').doc(currentWeekId);
+                
+                try {
+                    // Update: CORRECT WAY -> Use Set with deep merge to ensure nesting exists
+                    await weekDocRef.set({
+                        id: currentWeekId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        stats: {
+                            [recruiterId]: {
+                                [field]: cleanVal
+                            }
+                        }
+                    }, { merge: true });
+                } catch (e) {
+                    alert("Error saving data: " + e.message);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            const addRosterMember = async (name) => {
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('roster').add({ name });
+            };
+
+            const removeRosterMember = async (id) => {
+                if(window.confirm("Remove from roster? (History will be kept)")) {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('roster').doc(id).delete();
+                }
+            };
+
+            const liveRows = useMemo(() => {
+                const rows = roster.map(r => {
+                    const stats = weekData[r.id] || {};
+                    return { ...r, ...stats };
+                });
+                rows.sort((a,b) => calculateScore(b) - calculateScore(a));
+                return rows;
+            }, [roster, weekData]);
+
+            const isHistory = selectedWeekId !== currentWeekId;
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 pb-20">
+                    <AdminLoginModal isOpen={showLogin} onClose={()=>setShowLogin(false)} onLogin={()=>{setIsAdmin(true); setActiveTab('dashboard');}} />
+
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                            <div className="flex gap-2">
+                                {isAdmin ? (
+                                    <div className="bg-slate-800 p-1 rounded-lg border border-slate-700 flex">
+                                        <button onClick={()=>setActiveTab('tracker')} className={`px-4 py-2 rounded-md text-sm font-bold ${activeTab==='tracker'?'bg-slate-600 text-white':'text-slate-400'}`}>Live Tracker</button>
+                                        <button onClick={()=>setActiveTab('dashboard')} className={`px-4 py-2 rounded-md text-sm font-bold ${activeTab==='dashboard'?'bg-blue-600 text-white':'text-slate-400'}`}>Admin Dashboard</button>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <select value={selectedWeekId} onChange={(e)=>setSelectedWeekId(e.target.value)} className="bg-slate-800 border border-slate-600 text-white pl-9 pr-8 py-2 rounded-lg font-medium cursor-pointer w-56 text-sm appearance-none">
+                                            <option value={currentWeekId}>Current Week (Live)</option>
+                                            <option disabled>──────────</option>
+                                            {allWeeks.filter(w => w.id !== currentWeekId).map(w => <option key={w.id} value={w.id}>{w.id}</option>)}
+                                        </select>
+                                        <div className="absolute left-3 top-2 text-slate-400 pointer-events-none"><CalendarIcon/></div>
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={()=>isAdmin ? (setIsAdmin(false), setActiveTab('tracker')) : setShowLogin(true)} className="text-slate-500 hover:text-white text-sm font-medium flex gap-2 items-center">
+                                {isAdmin ? <><UnlockIcon size={14}/> Lock Admin</> : <><LockIcon size={14}/> Admin Access</>}
+                            </button>
+                        </div>
+
+                        {activeTab === 'dashboard' ? (
+                            <AdminDashboard allWeeks={allWeeks} roster={roster} onAddRecruiter={addRosterMember} onDeleteRecruiter={removeRosterMember} />
+                        ) : (
+                            <div className="space-y-6 fade-in">
+                                <div className={`flex justify-between items-center p-6 rounded-2xl shadow-lg border ${isHistory ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-800 border-slate-700'}`}>
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-white flex gap-2"><TrophyIcon className={isHistory?'text-slate-500':'text-yellow-500'}/> {isHistory ? selectedWeekId : 'Therapy Team Tracker'}</h1>
+                                        <p className="text-slate-400 mt-1">Target: <span className="text-emerald-400 font-bold">1,000 Points</span> / Week</p>
+                                    </div>
+                                    <div className="flex flex-col items-end">
+                                        {!isHistory && <div className="text-xs text-green-400 font-mono animate-pulse">● Live Sync</div>}
+                                        {isSaving && <div className="text-xs text-slate-400 font-mono flex items-center gap-1 mt-1"><CloudCheckIcon /> Saving...</div>}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
+                                    <LegendItem label="POP (Rev)" value={POINTS.POP} color="text-emerald-400" />
+                                    <LegendItem label="Unique Sub" value={POINTS.UNIQUE} color="text-blue-400" />
+                                    <LegendItem label="Packet" value={POINTS.PACKET} color="text-purple-400" />
+                                    <LegendItem label="Interview" value={POINTS.INTERVIEW} color="text-indigo-400" />
+                                    <LegendItem label="Talk Time" value={POINTS.TALK_MINUTE} unit="/ min" color="text-orange-400" />
+                                    <LegendItem label="Dials" value={POINTS.DIAL} unit="/ dial" color="text-slate-300" />
+                                    <LegendItem label="Referral" value={POINTS.REFERRAL} color="text-yellow-400" />
+                                </div>
+
+                                <div className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 overflow-hidden relative">
+                                    {isHistory && <div className="absolute inset-0 bg-slate-900/10 pointer-events-none z-10"></div>}
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-900/50 text-slate-400 text-sm uppercase tracking-wider border-b border-slate-700">
+                                                    <th className="p-4 w-48 sticky left-0 bg-slate-900/95 z-10">Name</th>
+                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><PhoneIcon/><span>Dials</span></div></th>
+                                                    <th className="p-4 text-center w-40"><div className="flex flex-col items-center gap-1"><ClockIcon/><span>Talk Time</span></div></th>
+                                                    <th className="p-4 text-center w-24 bg-emerald-900/10"><div className="flex flex-col items-center gap-1 text-emerald-400"><BriefcaseIcon/><span>POP</span></div></th>
+                                                    <th className="p-4 text-center w-24 bg-blue-900/10"><div className="flex flex-col items-center gap-1 text-blue-400"><UsersIcon/><span>Uniques</span></div></th>
+                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><FileCheckIcon/><span>Packet</span></div></th>
+                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><FileTextIcon/><span>Intvw</span></div></th>
+                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1 text-yellow-500"><StarIcon/><span>Referral</span></div></th>
+                                                    <th className="p-4 text-right w-32 sticky right-0 bg-slate-900/95 z-10">Score</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-700">
+                                                {liveRows.map(r => {
+                                                    const score = calculateScore(r);
+                                                    const isPassing = score >= GOAL;
+                                                    const scoreColor = isPassing ? 'text-emerald-400' : 'text-red-400';
+                                                    return (
+                                                        <tr key={r.id} className="hover:bg-slate-700/50 transition-colors list-move">
+                                                            <td className="p-3 sticky left-0 bg-slate-800 z-10 border-r border-slate-700/50 font-medium text-slate-200">
+                                                                {r.name}
+                                                            </td>
+                                                            <td className="p-3"><NumberInput value={r.dials||''} onChange={(v)=>handleStatChange(r.id, 'dials', v)} disabled={isHistory} color="focus:border-blue-500" /></td>
+                                                            <td className="p-3">
+                                                                <div className="flex items-center gap-1">
+                                                                    <NumberInput value={r.talkHours||''} onChange={(e)=>handleStatChange(r.id, 'talkHours', e)} disabled={isHistory} className="w-14" color="focus:border-orange-500" />
+                                                                    <span className="text-slate-500">:</span>
+                                                                    <NumberInput value={r.talkMinutes||''} onChange={(e)=>handleStatChange(r.id, 'talkMinutes', e)} disabled={isHistory} className="w-14" color="focus:border-orange-500" />
+                                                                </div>
+                                                            </td>
+                                                            <td className="p-3 bg-emerald-900/5"><NumberInput value={r.pop||''} onChange={(v)=>handleStatChange(r.id, 'pop', v)} disabled={isHistory} color="focus:border-emerald-500 border-emerald-700/50 text-emerald-200 font-bold" /></td>
+                                                            <td className="p-3 bg-blue-900/5"><NumberInput value={r.uniques||''} onChange={(v)=>handleStatChange(r.id, 'uniques', v)} disabled={isHistory} color="focus:border-blue-500 border-blue-700/50 text-blue-200 font-bold" /></td>
+                                                            <td className="p-3"><NumberInput value={r.packets||''} onChange={(v)=>handleStatChange(r.id, 'packets', v)} disabled={isHistory} color="focus:border-purple-500" /></td>
+                                                            <td className="p-3"><NumberInput value={r.interviews||''} onChange={(v)=>handleStatChange(r.id, 'interviews', v)} disabled={isHistory} color="focus:border-indigo-500" /></td>
+                                                            <td className="p-3"><NumberInput value={r.referrals||''} onChange={(v)=>handleStatChange(r.id, 'referrals', v)} disabled={isHistory} color="focus:border-yellow-500" /></td>
+                                                            <td className={`p-3 text-right text-xl font-black sticky right-0 bg-slate-800 z-10 border-l border-slate-700/50 ${scoreColor}`}>
+                                                                {score.toLocaleString()}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                                {liveRows.length === 0 && (
+                                                    <tr><td colSpan="9" className="p-12 text-center text-slate-500">No team members. Ask admin to update roster.</td></tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const LegendItem = ({ label, value, unit = "pts", color }) => (
+            <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
+                <span className="text-slate-400 text-xs uppercase tracking-wider font-bold mb-1">{label}</span>
+                <span className={`text-xl font-bold ${color}`}>{value} <span className="text-xs">{unit}</span></span>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<TherapyTracker />);
+    </script>
+</body>
+</html>
