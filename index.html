@@ -393,7 +393,7 @@
                                     <StatCard label="Avg POP" value={recruiterStats.avgPop} />
                                     <StatCard label="Avg Uniques" value={recruiterStats.avgUniques} />
                                     <StatCard label="Avg Pkts" value={recruiterStats.avgPackets} />
-                                    <StatCard label="Avg Intv" value={recruiterStats.avgInterviews} />
+                                    <StatCard label="Avg Qual-Call" value={recruiterStats.avgInterviews} />
                                     <StatCard label="Avg Refs" value={recruiterStats.avgReferrals} />
                                 </div>
                             </div>
@@ -409,7 +409,7 @@
                                         <SortHeader label="Talk (H:M)" sKey="talkMins" />
                                         <SortHeader label="POP" sKey="pop" />
                                         <SortHeader label="Uniq" sKey="uniques" />
-                                        <SortHeader label="Intv" sKey="interviews" />
+                                        <SortHeader label="Qual-Call" sKey="interviews" />
                                         {subTab === 'history' && <SortHeader label="Pkts" sKey="packets" />}
                                         {subTab === 'history' && <SortHeader label="Refs" sKey="referrals" />}
                                     </tr>
@@ -648,7 +648,7 @@
                                     <LegendItem label="POP (Rev)" value={POINTS.POP} color="text-emerald-400" />
                                     <LegendItem label="Unique Sub" value={POINTS.UNIQUE} color="text-blue-400" />
                                     <LegendItem label="Packet" value={POINTS.PACKET} color="text-purple-400" />
-                                    <LegendItem label="Interview" value={POINTS.INTERVIEW} color="text-indigo-400" />
+                                    <LegendItem label="Qual-Call" value={POINTS.INTERVIEW} color="text-indigo-400" />
                                     <LegendItem label="Talk Time" value={POINTS.TALK_MINUTE} unit="/ min" color="text-orange-400" />
                                     <LegendItem label="Dials" value={POINTS.DIAL} unit="/ dial" color="text-slate-300" />
                                     <LegendItem label="Referral" value={POINTS.REFERRAL} color="text-yellow-400" />
@@ -665,7 +665,7 @@
                                                     <th className="p-4 text-center w-24 bg-emerald-900/10"><div className="flex flex-col items-center gap-1 text-emerald-400"><BriefcaseIcon/><span>POP</span></div></th>
                                                     <th className="p-4 text-center w-24 bg-blue-900/10"><div className="flex flex-col items-center gap-1 text-blue-400"><UsersIcon/><span>Uniques</span></div></th>
                                                     <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><FileCheckIcon/><span>Packet</span></div></th>
-                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><FileTextIcon/><span>Intvw</span></div></th>
+                                                    <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1"><FileTextIcon/><span>Qual-Call</span></div></th>
                                                     <th className="p-4 text-center w-24"><div className="flex flex-col items-center gap-1 text-yellow-500"><StarIcon/><span>Referral</span></div></th>
                                                     <th className="p-4 text-right w-32 sticky right-0 bg-slate-900/95 z-10">Score</th>
                                                 </tr>
