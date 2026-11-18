@@ -8,7 +8,7 @@ import { loadImage, sizeOf } from '../../engine/images'
 import { photoUrl, searchCities, thumbUrl } from '../../photos/cities'
 import { repo, type BrandAsset } from '../../data'
 import { useEditor } from '../store'
-import { addBadge, addImage, addShape, addText, addTextPair, toast } from '../actions'
+import { addBadge, addImage, addShape, addText, addTextPair, toast, uploadError } from '../actions'
 import { useCityData } from '../hooks'
 import { Section, Skeleton } from '../ui'
 
@@ -126,13 +126,15 @@ const BUILT_IN = [
 
 export function BrandPanel() {
   const readOnly = useEditor((s) => s.readOnly)
+  // admins open the editor with canEditLocked; only they may remove a brand file (everyone removes their own uploads)
+  const isAdmin = useEditor((s) => s.canEditLocked)
   const [assets, setAssets] = useState<BrandAsset[] | null>(null)
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
+  // the person's own uploads first, then the brand files the admins added (in the browser store they are one list)
   const refresh = () =>
-    repo
-      .listAssets()
-      .then(setAssets)
+    Promise.all([repo.listUploads().catch(() => [] as BrandAsset[]), repo.listAssets().catch(() => [] as BrandAsset[])])
+      .then(([mine, brand]) => setAssets([...mine, ...brand]))
       .catch(() => setAssets([]))
   useEffect(() => {
     void refresh()
@@ -144,9 +146,9 @@ export function BrandPanel() {
     for (const f of [...files].slice(0, 12)) {
       if (!f.type.startsWith('image/')) continue
       try {
-        await repo.uploadAsset(f, /logo/i.test(f.name) ? 'logo' : 'photo')
-      } catch {
-        toast(`“${f.name}” could not be read`)
+        await repo.uploadImage(f)
+      } catch (e) {
+        toast(`“${f.name}”: ${uploadError(e)}`)
       }
     }
     setBusy(false)
@@ -221,15 +223,17 @@ export function BrandPanel() {
                 >
                   <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" loading="lazy" />
                 </button>
-                <button
-                  type="button"
-                  title="Remove from uploads"
-                  aria-label={`Remove ${a.name} from uploads`}
-                  className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-black/60 text-white hover:bg-red-600 group-hover:flex"
-                  onClick={() => void repo.deleteAsset(a.id).then(refresh)}
-                >
-                  <Trash2 size={12} />
-                </button>
+                {(a.ownerUid || isAdmin) && !readOnly && (
+                  <button
+                    type="button"
+                    title="Remove from uploads (designs that use it keep it)"
+                    aria-label={`Remove ${a.name} from uploads`}
+                    className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-black/60 text-white hover:bg-red-600 group-hover:flex"
+                    onClick={() => void (a.ownerUid ? repo.deleteUpload(a.id) : repo.deleteAsset(a.id)).then(refresh, () => toast('That couldn’t be removed'))}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </div>
             ))}
           </div>

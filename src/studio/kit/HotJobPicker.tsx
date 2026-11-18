@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Briefcase, Search, X } from 'lucide-react'
-import { demoHotJobs, hotJobToFields, type HotJob, type JobSource } from './connectors'
+import { hotJobSource, hotJobToFields, type HotJob, type JobSource } from './connectors'
 
 export function HotJobPicker({
-  source = demoHotJobs,
+  source = hotJobSource(),
   onPick,
   onClose,
 }: {

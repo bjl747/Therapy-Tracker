@@ -82,6 +82,10 @@ export function needsPixelWork(f: ImageFilters): boolean {
 }
 
 const processed = new Map<string, HTMLCanvasElement>()
+/** total pixels kept in `processed` (~4 bytes each): dragging a filter slider made a new canvas per step,
+ *  and 40 × 1600² canvases (~400 MB) went past iOS Safari's canvas limit, which blanks canvases */
+let processedPixels = 0
+const MAX_PROCESSED_PIXELS = 12_000_000
 const MAX_PROCESS = 1600
 /** blur is done at a reduced size when it's strong (a blurred image has no
  *  detail to lose) — keeps the pixel pass fast at any radius */
@@ -127,7 +131,12 @@ export function filtered(src: string, img: Src, f: ImageFilters, blurSrcPx = 0):
   if (colour) applyPixels(data.data, f)
   if (sigma) blurRGBA(data.data, c.width, c.height, sigma)
   ctx.putImageData(data, 0, 0)
-  if (processed.size > 40) processed.delete(processed.keys().next().value!)
+  processedPixels += c.width * c.height
+  while (processed.size && (processed.size >= 40 || processedPixels > MAX_PROCESSED_PIXELS)) {
+    const [oldKey, old] = processed.entries().next().value!
+    processed.delete(oldKey)
+    processedPixels -= old.width * old.height
+  }
   processed.set(key, c)
   return c
 }

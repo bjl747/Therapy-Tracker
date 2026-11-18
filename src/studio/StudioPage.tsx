@@ -11,7 +11,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { StudioErrorBoundary } from './ui/ErrorBoundary'
 import { LayoutTemplate, Save, X } from 'lucide-react'
-import { repo } from './data'
+import { configureRepo, repo } from './data'
 import { useEditor } from './editor/store'
 import { useTemplateLib, effectiveTemplates } from './templates/store'
 import { applyDesignToTemplate } from './templates/admin'
@@ -47,12 +47,21 @@ function PdfRoute() {
 function EditorRoute() {
   const { id = '' } = useParams()
   const nav = useNavigate()
-  const { can, user } = useAuth()
-  const isAdmin = user.role === 'admin'
+  const { can, user, isManager } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [meta, setMeta] = useState<Design['source'] | null>(null)
+  const [owner, setOwner] = useState<string | undefined>()
   useEffect(() => {
-    void repo.getDesign(id).then((d) => setMeta(d?.source ?? null))
+    void repo.getDesign(id).then(
+      (d) => {
+        setMeta(d?.source ?? null)
+        setOwner(d?.ownerUid)
+      },
+      () => setMeta(null),
+    )
   }, [id])
+  // AMs can open everyone's designs but only owners and managers / admins change them (the rules say the same)
+  const othersDesign = !!owner && owner !== user?.uid && !isManager && !isAdmin
   const editingTemplate = !!meta?.templateEdit && isAdmin
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -64,7 +73,7 @@ function EditorRoute() {
           onExit={() => nav(editingTemplate ? `/studio/templates?t=${meta!.templateId}` : '/studio/designs')}
           // only admins can move/edit brand-locked pieces and locked fields
           canEditLocked={isAdmin}
-          readOnly={can('studio') !== 'edit'}
+          readOnly={can('studio') !== 'edit' || othersDesign}
         />
       </div>
     </div>
@@ -115,6 +124,10 @@ function TemplateEditBar({ templateId, size, designId }: { templateId: string; s
 
 export function StudioPage() {
   const { pathname } = useLocation()
+  const { user, isManager } = useAuth()
+  // before any child loads: the hub's database for a signed-in person (browser storage in demo mode). Managers, AMs and
+  // admins list everyone's designs, recruiters their own (BJ, 2026-11-18: like candidates).
+  configureRepo({ uid: user?.uid, seeAll: !!user && (isManager || user.role === 'account_manager' || user.role === 'admin') })
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full overflow-auto">
       <StudioErrorBoundary resetKey={pathname}>

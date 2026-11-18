@@ -136,16 +136,23 @@ async function ingestImage(file: File): Promise<void> {
     const img = await decode(url)
     let bytes = raw
     let mime = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
-    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
-      // WebP etc.: pdf-lib only embeds PNG / JPEG, so convert once here.
+    if (file.type !== 'image/png') {
+      // WebP etc.: pdf-lib only embeds PNG / JPEG, so convert once here. JPEGs are redrawn too: phone photos
+      // carry an EXIF rotation that the browser applies but pdf-lib ignores (they came out sideways).
       const c = document.createElement('canvas')
       c.width = img.naturalWidth
       c.height = img.naturalHeight
       c.getContext('2d')?.drawImage(img, 0, 0)
-      const blob: Blob | null = await new Promise((r) => c.toBlob(r, 'image/png'))
+      const jpeg = file.type === 'image/jpeg'
+      const blob: Blob | null = await new Promise((r) => c.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.92))
       if (!blob) throw new Error('convert')
-      bytes = new Uint8Array(await blob.arrayBuffer())
-      mime = 'image/png'
+      if (jpeg) {
+        bytes = new Uint8Array(await blob.arrayBuffer())
+        mime = 'image/jpeg'
+      } else {
+        bytes = new Uint8Array(await blob.arrayBuffer())
+        mime = 'image/png'
+      }
     }
     const s = Math.min(LETTER.w / img.naturalWidth, LETTER.h / img.naturalHeight)
     const id = uid('src')

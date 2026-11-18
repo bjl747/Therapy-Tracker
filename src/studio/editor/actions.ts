@@ -136,6 +136,14 @@ export function addBadge(label: string, bg: string, color: string, radius: numbe
   s.addEl(el)
 }
 
+/** a plain-language reason an upload failed (permission vs. a file the browser can't read) */
+export function uploadError(e: unknown): string {
+  const code = (e as { code?: string })?.code ?? ''
+  if (/unauthorized|permission/.test(code)) return 'You don’t have permission to upload pictures here'
+  if (/quota|retry-limit|network/.test(code)) return 'The upload didn’t go through. Check the connection and try again'
+  return 'That image could not be read'
+}
+
 export async function uploadAndAdd(file: File, at?: Pt): Promise<void> {
   if (ed().readOnly) return
   if (!file.type.startsWith('image/')) {
@@ -143,10 +151,10 @@ export async function uploadAndAdd(file: File, at?: Pt): Promise<void> {
     return
   }
   try {
-    const a = await repo.uploadAsset(file, 'photo')
+    const a = await repo.uploadImage(file)
     addImage(a.url, { w: a.w, h: a.h }, { at, name: a.name.replace(/\.[a-z0-9]+$/i, '') })
-  } catch {
-    toast('That image could not be read')
+  } catch (e) {
+    toast(uploadError(e))
   }
 }
 

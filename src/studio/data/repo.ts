@@ -29,6 +29,8 @@ export interface BrandAsset {
   w: number
   h: number
   createdAt: number
+  /** set on a person's own uploads (hub_studio/uploads); brand files have none */
+  ownerUid?: string
 }
 
 export interface StudioRepo {
@@ -40,10 +42,15 @@ export interface StudioRepo {
   listTemplates(): Promise<TemplateDef[]>
   saveTemplate(t: TemplateDef): Promise<void>
   deleteTemplate(id: string): Promise<void>
-  /** brand files + uploaded photos (approved upload exception) */
+  /** brand files: admins add them on the Brand tab, everyone uses them */
   listAssets(): Promise<BrandAsset[]>
   uploadAsset(file: File, kind: BrandAsset['kind']): Promise<BrandAsset>
   deleteAsset(id: string): Promise<void>
+  /** a person's own photos added in the editor ("Your uploads"; images only, BJ's upload exception 2026-11-18).
+   *  In the browser store these are kept with the brand files (one list), so listUploads returns none. */
+  listUploads(): Promise<BrandAsset[]>
+  uploadImage(file: File): Promise<BrandAsset>
+  deleteUpload(id: string): Promise<void>
 }
 
 // ── IndexedDB (demo / standalone) ───────────────────────────
@@ -143,4 +150,9 @@ export const localRepo: StudioRepo = {
     return a
   },
   deleteAsset: (id) => del('assets', id).then(() => undefined),
+  listUploads: async () => [],
+  uploadImage(file) {
+    return localRepo.uploadAsset(file, 'photo')
+  },
+  deleteUpload: (id) => del('assets', id).then(() => undefined),
 }

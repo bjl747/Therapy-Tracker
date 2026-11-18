@@ -11,7 +11,7 @@ import { useAuth } from '@/context/AuthContext'
 import { design, SIZES, type SizeKey } from '../engine/model'
 import { BUILT_IN_TEMPLATES, type TemplateDef } from '../templates'
 import { instantiate } from '../templates/instantiate'
-import { repo, type BrandAsset, type DesignSummary } from '../data'
+import { localLeftovers, moveLocalToHub, repo, type BrandAsset, type DesignSummary } from '../data'
 import { DesignCanvas } from '../ui/DesignCanvas'
 import { useToast } from '../ui/toast'
 import { TemplatesAdmin } from '../admin/TemplatesAdmin'
@@ -22,7 +22,7 @@ type Tab = 'create' | 'designs' | 'brand' | 'templates'
 export function StudioHome({ tab }: { tab: Tab }) {
   const nav = useNavigate()
   const { user } = useAuth()
-  const isAdmin = user.role === 'admin'
+  const isAdmin = user?.role === 'admin'
   const tabs: { id: Tab; label: string; to: string }[] = [
     { id: 'create', label: 'Create', to: '/studio' },
     { id: 'designs', label: 'My designs', to: '/studio/designs' },
@@ -120,7 +120,7 @@ function CreateTab() {
           <div key={tpl.id} className="min-w-0 mb-4 last:mb-0">
             <div className="flex items-baseline gap-2 mb-2 min-w-0">
               <div className="text-[13.5px] font-bold whitespace-nowrap">{tpl.name}</div>
-              <div className="text-[12px] text-ink-3 truncate">{tpl.description}</div>
+              <div className="text-[12px] text-ink-3 truncate" title={tpl.description}>{tpl.description}</div>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {Object.keys(tpl.layouts).map((size) => {
@@ -131,7 +131,7 @@ function CreateTab() {
                     <div className="rounded-lg overflow-hidden ring-1 ring-black/5 shadow-sm group-hover:ring-accent/60 transition">
                       <DesignCanvas design={d} width={Math.round((h * d.w) / d.h)} />
                     </div>
-                    <div className="text-[11.5px] font-semibold text-ink-2 mt-1">{SIZES[size as SizeKey]?.label ?? size}</div>
+                    <div className="text-[11.5px] font-semibold text-ink-2 mt-1 truncate" title={SIZES[size as SizeKey]?.label ?? size}>{SIZES[size as SizeKey]?.label ?? size}</div>
                   </button>
                 )
               })}
@@ -156,7 +156,7 @@ function CreateTab() {
                   <span className="block bg-accent/15 border border-accent/40 rounded-[3px]" style={{ width: r >= 1 ? 40 : 40 * r, height: r >= 1 ? 40 / r : 40 }} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[12.5px] font-bold truncate">{s.label}</span>
+                  <span className="block text-[12.5px] font-bold truncate" title={s.label}>{s.label}</span>
                   <span className="block text-[11px] text-ink-3 tabular-nums">{s.w}×{s.h}</span>
                 </span>
               </button>
@@ -173,25 +173,54 @@ function CreateTab() {
 function DesignsTab() {
   const nav = useNavigate()
   const toast = useToast()
+  const { user, isManager } = useAuth()
   const [list, setList] = useState<DesignSummary[] | null>(null)
   const [q, setQ] = useState('')
-  const load = () => void repo.listDesigns().then(setList)
+  const [leftovers, setLeftovers] = useState(0)
+  const [moving, setMoving] = useState(false)
+  const load = () =>
+    void repo.listDesigns().then(setList, () => {
+      setList([])
+      toast('Couldn’t load designs', 'Check the connection and reload the page.', 'error')
+    })
   useEffect(load, [])
+  // designs made before Studio saved to the hub are still in this browser: offer to move them in
+  useEffect(() => void localLeftovers().then((l) => setLeftovers(l.length)), [])
+  const moveIn = async () => {
+    setMoving(true)
+    const r = await moveLocalToHub({ isAdmin: user?.role === 'admin' }).catch(() => ({ moved: 0, failed: leftovers }))
+    setMoving(false)
+    setLeftovers(r.failed)
+    load()
+    toast(r.failed ? 'Some designs didn’t move' : 'Designs moved into the hub', r.failed ? `${r.moved} moved, ${r.failed} still in this browser.` : `${r.moved} design${r.moved === 1 ? '' : 's'} now saved to the hub.`, r.failed ? 'error' : 'ok')
+  }
+  const mine = (d: DesignSummary) => !d.ownerUid || d.ownerUid === user?.uid
+  // owners and managers / admins can delete (the rules say the same); AMs can open everyone's but not delete them
+  const canDelete = (d: DesignSummary) => mine(d) || isManager || user?.role === 'admin'
   // template drafts being edited by an admin aren't personal designs
   const shown = (list ?? []).filter((d) => !d.id.startsWith('tpl_') && d.name.toLowerCase().includes(q.trim().toLowerCase()))
 
   const remove = async (d: DesignSummary) => {
-    const full = await repo.getDesign(d.id)
-    await repo.deleteDesign(d.id)
-    load()
-    toast('Design deleted', d.name, 'ok', full ? { label: 'Undo', run: () => void repo.saveDesign(full, d.thumb).then(load) } : undefined)
+    try {
+      const full = await repo.getDesign(d.id)
+      await repo.deleteDesign(d.id)
+      load()
+      toast('Design deleted', d.name, 'ok', full ? { label: 'Undo', run: () => void repo.saveDesign(full, d.thumb).then(load) } : undefined)
+    } catch {
+      toast('Couldn’t delete it', d.name, 'error')
+    }
   }
   const duplicate = async (d: DesignSummary) => {
-    const full = await repo.getDesign(d.id)
-    if (!full) return
-    const copy = { ...structuredClone(full), id: `d${Date.now().toString(36)}`, name: `${full.name} (copy)`, kitId: undefined }
-    await repo.saveDesign(copy, d.thumb)
-    load()
+    try {
+      const full = await repo.getDesign(d.id)
+      if (!full) return
+      // the copy is the duplicator's own design, whoever owned the original
+      const copy = { ...structuredClone(full), id: `d${Date.now().toString(36)}`, name: `${full.name} (copy)`, kitId: undefined, ownerUid: undefined }
+      await repo.saveDesign(copy, d.thumb)
+      load()
+    } catch {
+      toast('Couldn’t duplicate it', d.name, 'error')
+    }
   }
 
   return (
@@ -202,6 +231,17 @@ function DesignsTab() {
           <input className="input pl-8" placeholder="Search designs" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
+      {leftovers > 0 && (
+        <div className="card card-accent p-3 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1 text-[12.5px]">
+            <b>{leftovers} design{leftovers === 1 ? '' : 's'} saved only in this browser</b>
+            <span className="text-ink-3"> from before Studio saved to the hub. Move them in so they’re safe and open anywhere.</span>
+          </div>
+          <button className="btn btn-primary" disabled={moving} onClick={() => void moveIn()}>
+            {moving ? 'Moving…' : 'Move into the hub'}
+          </button>
+        </div>
+      )}
       {list === null ? (
         <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -236,13 +276,20 @@ function DesignsTab() {
                   <div className="text-[11px] text-ink-3 tabular-nums whitespace-nowrap">
                     {d.w}×{d.h} · {formatDistanceToNow(d.updatedAt, { addSuffix: true })}
                   </div>
+                  {!mine(d) && d.ownerName && (
+                    <div className="text-[11px] text-ink-3 truncate" title={`Made by ${d.ownerName}`}>
+                      by {d.ownerName}
+                    </div>
+                  )}
                 </div>
                 <button className="p-1 text-ink-3 hover:text-ink" onClick={() => void duplicate(d)} aria-label="Duplicate">
                   <Copy size={14} />
                 </button>
-                <button className="p-1 text-ink-3 hover:text-[rgb(var(--status-bad))]" onClick={() => void remove(d)} aria-label="Delete">
-                  <Trash2 size={14} />
-                </button>
+                {canDelete(d) && (
+                  <button className="p-1 text-ink-3 hover:text-[rgb(var(--status-bad))]" onClick={() => void remove(d)} aria-label="Delete">
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

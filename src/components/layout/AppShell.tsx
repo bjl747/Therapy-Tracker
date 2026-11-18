@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {setDemoRole && (
           <label className="px-1 mb-2">
             <span className="eyebrow block mb-1">Demo · view as</span>
-            <select className="input" value={user.role} onChange={(e) => setDemoRole(e.target.value as Role)}>
+            <select className="input" value={user?.role} onChange={(e) => setDemoRole(e.target.value as Role)}>
               <option value="admin">Admin</option>
               <option value="manager">Manager</option>
               <option value="account_manager">Account manager</option>

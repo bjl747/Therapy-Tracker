@@ -70,8 +70,19 @@ const OPENERS = [
   (j: Job) => `📍 Now hiring: ${j.job_title} in ${j.location}!`,
   (j: Job) => `${j.job_title} wanted in ${j.location} 🚀`,
   (j: Job) => `New opportunity alert: ${j.job_title} — ${j.location}`,
-  (j: Job) => `Ready for your next assignment? We're hiring a ${j.job_title} in ${j.location}.`,
+  (j: Job) => `Ready for your next assignment? We're hiring ${article(j.job_title)} ${j.job_title} in ${j.location}.`,
 ]
+
+/** "a" or "an" by sound: "an RN", "an LPN", "an ICU nurse", "a CNA", "a Unit Clerk" */
+export function article(title: string | undefined): 'a' | 'an' {
+  const w = (title ?? '').trim().split(/[\s–—/-]+/)[0] ?? ''
+  if (!w) return 'a'
+  // spelled-out letters (RN, LPN, MRI, NP, SLP, FNP, X-ray): the letter's name decides
+  if (w.length > 1 && w === w.toUpperCase() && /^[A-Z]/.test(w)) return /^[AEFHILMNORSX]/.test(w) ? 'an' : 'a'
+  if (/^(uni|use|usu|ur[aeiou]|eu|one)/i.test(w)) return 'a'
+  if (/^(hour|honest|hono)/i.test(w)) return 'an'
+  return /^[aeiou]/i.test(w) ? 'an' : 'a'
+}
 
 const CLOSERS = [
   (j: Job) => `Apply today at ${j.website || 'our website'} or message us to learn more.`,

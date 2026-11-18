@@ -49,7 +49,19 @@ const docCache = new Map<string, Promise<PDFDocumentProxy>>()
 /** Open a pdfjs document from bytes. pdfjs transfers its buffer, so it gets a copy. */
 export async function openPdfjsDoc(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   const pdfjs = await loadPdfjs()
-  const task = pdfjs.getDocument({ data: bytes.slice() })
+  // Decoders, fonts and maps are served from public/pdfjs (copied from pdfjs-dist; recopy when upgrading it).
+  // useWasm: false — the hub's CSP has no 'wasm-unsafe-eval', so pdf.js uses its plain-JS image decoders
+  // (JPEG 2000 / JBIG2 in scanned PDFs) instead of WebAssembly; without them those images render blank.
+  const base = `${location.origin}/pdfjs/`
+  const task = pdfjs.getDocument({
+    data: bytes.slice(),
+    useWasm: false,
+    wasmUrl: `${base}wasm/`,
+    standardFontDataUrl: `${base}standard_fonts/`,
+    cMapUrl: `${base}cmaps/`,
+    cMapPacked: true,
+    iccUrl: `${base}iccs/`,
+  })
   return task.promise
 }
 

@@ -24,6 +24,8 @@ export function matchHeader(header: string, allFields: FieldDef[]): string | nul
   const fields = allFields.filter((f) => !f.locked)
   const h = norm(header)
   if (!h) return null
+  // internal money columns never go on a public post ("Bill Rate High" would otherwise match "rate high")
+  if (/\b(bill|billing|margin|spread|cost|markup|gp)\b/.test(h)) return null
   for (const f of fields) if (norm(f.key) === h || norm(f.label) === h) return f.key
   for (const f of fields) if ((ALIASES[f.key] ?? []).some((a) => norm(a) === h)) return f.key
   for (const f of fields) if ((ALIASES[f.key] ?? []).some((a) => h.includes(norm(a)) && norm(a).length > 3)) return f.key
@@ -32,8 +34,9 @@ export function matchHeader(header: string, allFields: FieldDef[]): string | nul
 
 /** split pasted text into rows of cells (tabs win over commas; quotes honoured) */
 export function parseTable(text: string): string[][] {
-  const t = text.replace(/\r\n?/g, '\n').trim()
-  if (!t) return []
+  // only blank lines are trimmed: a blank first cell is a leading tab that keeps the columns lined up
+  const t = text.replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '')
+  if (!t.trim()) return []
   const sep = t.split('\n')[0].includes('\t') ? '\t' : ','
   const rows: string[][] = []
   let row: string[] = []
@@ -74,7 +77,14 @@ export function parseJobs(text: string, fields: FieldDef[]): BatchResult {
   const rows = parseTable(text)
   if (rows.length < 2) return { jobs: [], mapping: [], headers: rows[0] ?? [] }
   const headers = rows[0]
-  const mapping = headers.map((h) => matchHeader(h, fields))
+  // each field is filled from one column only: the first that matches (a second "Profession" column after "Specialty" is ignored)
+  const used = new Set<string>()
+  const mapping = headers.map((h) => {
+    const key = matchHeader(h, fields)
+    if (!key || used.has(key)) return null
+    used.add(key)
+    return key
+  })
   const jobs = rows.slice(1).map((r) => {
     const job: Record<string, string> = {}
     mapping.forEach((key, i) => {
