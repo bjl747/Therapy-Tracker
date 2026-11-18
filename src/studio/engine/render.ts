@@ -111,6 +111,38 @@ export function animState(anim: Anim | undefined, time: number | undefined) {
   return s
 }
 
+/** seconds until the page's last entrance animation finishes (0 = none).
+ *  Pass the design's fields so switched-off showIf rows don't count. */
+export function animEnd(page: Page, fields?: Record<string, string>): number {
+  let end = 0
+  for (const el of page.elements) {
+    if (!el.anim || el.anim.kind === 'none' || !isDrawn(el, fields)) continue
+    end = Math.max(end, Math.max(0, el.anim.delay) + Math.max(0.01, el.anim.duration))
+  }
+  return end
+}
+
+/** small pause after the last entrance before the final frame is held */
+export const ANIM_TAIL = 0.25
+
+/**
+ * How long a page plays in the GIF and the preview: its length, stretched so
+ * every entrance animation can finish (delays can exceed the page length,
+ * e.g. after shortening a page that was auto-animated).
+ */
+export function playLength(page: Page, fields?: Record<string, string>, base = page.duration ?? 4): number {
+  const end = animEnd(page, fields)
+  return Math.max(base, end > 0 ? end + ANIM_TAIL : 0)
+}
+
+/** Animate panel's delay slider: the latest start that still lets the
+ *  entrance finish within the page (never below the current value, so an
+ *  existing delay isn't silently clamped). */
+export function maxAnimDelay(pageLen: number, anim: Pick<Anim, 'delay' | 'duration'>): number {
+  const fit = Math.floor(Math.max(0, pageLen - anim.duration) * 20 + 1e-9) / 20
+  return Math.max(0.5, fit, anim.delay)
+}
+
 // ── primitives ──────────────────────────────────────────────
 
 function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
@@ -264,13 +296,20 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
     ctx.restore()
     return
   }
-  const img = filtered(src, raw, el.filters)
+  // blur is in design px; convert to source-image px by how big the image is
+  // drawn (cover: the cropped source spans the box width; contain: fitted)
+  let blurSrcPx = 0
+  if (el.filters.blur > 0) {
+    const r = sizeOf(raw)
+    const srcPerDesign = el.fit === 'contain' ? 1 / Math.min(w / r.w, h / r.h) : Math.min(r.w, (r.h * w) / h) / w / Math.max(1, el.zoom)
+    blurSrcPx = el.filters.blur * srcPerDesign
+  }
+  const img = filtered(src, raw, el.filters, blurSrcPx)
   const { w: iw, h: ih } = sizeOf(img)
   if (el.flipX) {
     ctx.translate(w, 0)
     ctx.scale(-1, 1)
   }
-  if (el.filters.blur > 0 && 'filter' in ctx) ctx.filter = `blur(${el.filters.blur * opts.scale}px)`
   if (el.fit === 'contain') {
     const s = Math.min(w / iw, h / ih)
     ctx.drawImage(img, (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s)
@@ -280,7 +319,6 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
     const r = coverRect(iw, ih, w, h, focus, zoom)
     ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, w, h)
   }
-  ctx.filter = 'none'
   if (el.filters.overlay && el.filters.overlay.opacity > 0) {
     ctx.globalAlpha *= el.filters.overlay.opacity
     ctx.fillStyle = el.filters.overlay.color
@@ -384,14 +422,45 @@ export function pageImageSrcs(design: Design, page: Page, opts: Pick<RenderOptio
   return out
 }
 
-/** wait for every image on a page, then draw it into a fresh canvas */
+/** what an export couldn't do perfectly — pass one in, read it afterwards */
+export interface ExportReport {
+  /** image srcs that failed to load and were drawn as a placeholder */
+  missingImages: string[]
+}
+
+export const newExportReport = (): ExportReport => ({ missingImages: [] })
+
+/** a short user-facing warning for a report, or null when all went well */
+export function exportWarning(r: ExportReport | undefined): string | null {
+  const n = r?.missingImages.length ?? 0
+  if (!n) return null
+  return n === 1 ? '1 photo couldn’t load — exported with a placeholder' : `${n} photos couldn’t load — exported with placeholders`
+}
+
+/**
+ * Load every image a page needs before an export. An explicit export retries
+ * images that failed earlier (failures are otherwise remembered for a while);
+ * anything still missing is added to `report`.
+ */
+export async function preloadPageImages(design: Design, page: Page, opts: Pick<RenderOptions, 'resolveImage'>, report?: ExportReport): Promise<void> {
+  const srcs = [...new Set(pageImageSrcs(design, page, opts))]
+  const got = await Promise.all(srcs.map((s) => loadImage(s, { retry: true })))
+  if (!report) return
+  srcs.forEach((s, i) => {
+    if (!got[i] && !report.missingImages.includes(s)) report.missingImages.push(s)
+  })
+}
+
+/** wait for every image on a page, then draw it into a fresh canvas.
+ *  Images that couldn't load are drawn as placeholders and listed in `report`. */
 export async function renderPageToCanvas(
   design: Design,
   pageIndex: number,
   opts: RenderOptions,
+  report?: ExportReport,
 ): Promise<HTMLCanvasElement> {
   const page = design.pages[pageIndex]
-  await Promise.all(pageImageSrcs(design, page, opts).map(loadImage))
+  await preloadPageImages(design, page, opts, report)
   const c = document.createElement('canvas')
   c.width = Math.round(design.w * opts.scale)
   c.height = Math.round(design.h * opts.scale)

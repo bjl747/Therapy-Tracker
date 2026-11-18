@@ -3,6 +3,7 @@
 import { ArrowLeft, ArrowRight, ArrowUp, Ban, Maximize2, Play, Sparkles, Wand2, Zap } from 'lucide-react'
 import clsx from 'clsx'
 import type { Anim, El } from '../../engine/model'
+import { animEnd, maxAnimDelay } from '../../engine/render'
 import { currentPage, useEditor } from '../store'
 import { useSelected } from '../hooks'
 import { useUi } from '../uiStore'
@@ -23,7 +24,10 @@ export function AnimatePanel() {
   const page = useEditor((s) => currentPage(s))
   const els = useSelected()
   const readOnly = useEditor((s) => s.readOnly)
+  const fields = useEditor((s) => s.design?.fields)
   if (!page) return null
+  const pageLen = page.duration ?? 4
+  const lastEnd = animEnd(page, fields)
   const first = els[0]
   const anim: Anim = first?.anim ?? { kind: 'none', delay: 0, duration: 0.6 }
   const sameKind = els.every((e) => (e.anim?.kind ?? 'none') === anim.kind)
@@ -52,6 +56,11 @@ export function AnimatePanel() {
         <Row label="Length">
           <SliderNum title="Page length in seconds" min={1} max={20} step={0.5} precision={1} suffix="s" value={page.duration ?? 4} onChange={(v) => useEditor.getState().setPageDuration(v)} />
         </Row>
+        {lastEnd > pageLen + 0.001 && (
+          <div className="text-[12px] text-amber-700 dark:text-amber-400">
+            The last animation ends at {Math.round(lastEnd * 10) / 10}s, so the GIF and preview run a little longer than the page length.
+          </div>
+        )}
         <div className="text-[12px] text-ink-3">
           {animated ? `${animated} animated element${animated > 1 ? 's' : ''} — download as a GIF from the Download menu.` : 'Nothing is animated yet. Auto-animate staggers every element in for you.'}
         </div>
@@ -85,7 +94,7 @@ export function AnimatePanel() {
             {anim.kind !== 'none' && (
               <>
                 <Row label="Starts at">
-                  <SliderNum title="Delay in seconds" min={0} max={Math.max(4, page.duration ?? 4)} step={0.05} precision={2} suffix="s" value={anim.delay} onChange={(v) => setAnim({ delay: v })} />
+                  <SliderNum title="Delay in seconds" min={0} max={maxAnimDelay(pageLen, anim)} step={0.05} precision={2} suffix="s" value={anim.delay} onChange={(v) => setAnim({ delay: v })} />
                 </Row>
                 <Row label="Takes">
                   <SliderNum title="Duration in seconds" min={0.1} max={3} step={0.05} precision={2} suffix="s" value={anim.duration} onChange={(v) => setAnim({ duration: v })} />

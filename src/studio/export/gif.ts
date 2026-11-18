@@ -499,10 +499,29 @@ export function encodeGif(frames: GifFrame[], width: number, height: number, opt
 
 // ── worker wrapper ──────────────────────────────────────────
 
+/** the parts of a Worker the wrapper uses (a fake in tests) */
+export interface GifWorkerLike {
+  onmessage: ((e: { data: any }) => void) | null
+  onerror: ((e: { message?: string; preventDefault?: () => void }) => void) | null
+  postMessage(msg: unknown, transfer: Transferable[]): void
+  terminate(): void
+}
+
+const defaultWorker = (): GifWorkerLike | null =>
+  typeof Worker === 'undefined' ? null : (new Worker(new URL('./gif.worker.ts', import.meta.url), { type: 'module' }) as unknown as GifWorkerLike)
+
+/** how long to wait for the worker script to load before encoding on the main thread */
+const READY_TIMEOUT_MS = 8000
+
 /**
- * Encode in a module Web Worker when available (frame buffers are TRANSFERRED,
- * so the caller's frames are detached afterwards), falling back to the main
- * thread if workers are missing or fail to start.
+ * Encode in a module Web Worker when available, else on the main thread.
+ *
+ * Frame buffers are TRANSFERRED to the worker (no copy — they can be tens of
+ * MB), which detaches the caller's frames. So the worker first says "ready";
+ * only then are the frames sent. If it fails to start (construction throws,
+ * the script doesn't load, no "ready" in time) the frames are still intact
+ * and we encode on the main thread. If it fails AFTER the transfer, the
+ * worker's real error is surfaced — a fallback would only see empty buffers.
  */
 export async function encodeGifAsync(
   frames: GifFrame[],
@@ -510,30 +529,56 @@ export async function encodeGifAsync(
   height: number,
   opts: Omit<GifOptions, 'onProgress'> = {},
   onProgress?: (p: number) => void,
+  createWorker: () => GifWorkerLike | null = defaultWorker,
 ): Promise<Uint8Array> {
-  if (typeof Worker !== 'undefined') {
+  let worker: GifWorkerLike | null = null
+  try {
+    worker = createWorker()
+  } catch {
+    worker = null
+  }
+  if (worker) {
+    const w = worker
     try {
-      const worker = new Worker(new URL('./gif.worker.ts', import.meta.url), { type: 'module' })
-      const bytes = await new Promise<Uint8Array>((resolve, reject) => {
-        worker.onmessage = (e: MessageEvent) => {
+      // null = the worker never got the frames → encode here instead
+      const bytes = await new Promise<Uint8Array | null>((resolve, reject) => {
+        let sent = false
+        const timer = setTimeout(() => {
+          if (!sent) resolve(null)
+        }, READY_TIMEOUT_MS)
+        w.onmessage = (e) => {
           const m = e.data
-          if (m.type === 'progress') onProgress?.(m.p)
-          else if (m.type === 'done') resolve(m.bytes)
-          else reject(new Error(m.message))
+          if (m?.type === 'ready') {
+            if (sent) return
+            sent = true
+            clearTimeout(timer)
+            const transfer: ArrayBuffer[] = []
+            const payload = frames.map((f) => {
+              const whole = f.data.byteOffset === 0 && f.data.byteLength === f.data.buffer.byteLength
+              const data = whole ? f.data : new Uint8ClampedArray(f.data)
+              transfer.push(data.buffer as ArrayBuffer)
+              return { data, delayMs: f.delayMs }
+            })
+            try {
+              w.postMessage({ frames: payload, width, height, opts }, transfer)
+            } catch {
+              // postMessage throws before transferring anything → frames intact
+              resolve(null)
+            }
+          } else if (m?.type === 'progress') onProgress?.(m.p)
+          else if (m?.type === 'done') resolve(m.bytes)
+          else if (m?.type === 'error') reject(new Error(m.message || 'The GIF encoder failed'))
         }
-        worker.onerror = (e) => reject(new Error(e.message || 'gif worker failed'))
-        const transfer: ArrayBuffer[] = []
-        const payload = frames.map((f) => {
-          const whole = f.data.byteOffset === 0 && f.data.byteLength === f.data.buffer.byteLength
-          const data = whole ? f.data : new Uint8ClampedArray(f.data)
-          transfer.push(data.buffer as ArrayBuffer)
-          return { data, delayMs: f.delayMs }
-        })
-        worker.postMessage({ frames: payload, width, height, opts }, transfer)
-      }).finally(() => worker.terminate())
-      return bytes
-    } catch {
-      // fall through to main thread (frames may be detached only if postMessage succeeded; it did not)
+        w.onerror = (e) => {
+          e.preventDefault?.()
+          clearTimeout(timer)
+          if (!sent) resolve(null)
+          else reject(new Error(e.message ? `The GIF encoder stopped: ${e.message}` : 'The GIF encoder stopped (the GIF may be too big — try a shorter or smaller page)'))
+        }
+      })
+      if (bytes) return bytes
+    } finally {
+      w.terminate()
     }
   }
   return encodeGif(frames, width, height, { ...opts, onProgress })

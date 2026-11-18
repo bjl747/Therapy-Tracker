@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shape } from './model'
+import { isDrawn, shape } from './model'
 import { aabb, alignMoves, corners, distributeMoves, hitEl, hitTest, intersects, normRect, resizeEl, rotatePt, snapMove, unionRect } from './geometry'
 
 const near = (a: number, b: number, eps = 1e-6) => expect(Math.abs(a - b)).toBeLessThan(eps)
@@ -41,6 +41,20 @@ describe('hit testing', () => {
     expect(hitTest([a, b], { x: 75, y: 75 })?.id).toBe('b')
     expect(hitTest([a, { ...b, hidden: true }], { x: 75, y: 75 })?.id).toBe('a')
     expect(hitTest([a, b], { x: 500, y: 500 })).toBeNull()
+  })
+  it('skips showIf rows whose field is empty (they are not drawn)', () => {
+    const row = { ...b, showIf: 'job4' }
+    expect(hitTest([a, row], { x: 75, y: 75 }, 0, { job4: '' })?.id).toBe('a')
+    expect(hitTest([a, row], { x: 75, y: 75 }, 0, { job4: '  ' })?.id).toBe('a')
+    expect(hitTest([a, row], { x: 75, y: 75 }, 0, {})?.id).toBe('a')
+    expect(hitTest([a, row], { x: 75, y: 75 }, 0, { job4: 'ICU RN' })?.id).toBe('b')
+  })
+  it('isDrawn: hidden / showIf, own field values only', () => {
+    expect(isDrawn({})).toBe(true)
+    expect(isDrawn({ hidden: true }, { x: 'y' })).toBe(false)
+    expect(isDrawn({ showIf: 'x' }, { x: 'y' })).toBe(true)
+    expect(isDrawn({ showIf: 'x' }, { x: '' })).toBe(false)
+    expect(isDrawn({ showIf: 'constructor' }, {})).toBe(false)
   })
   it('respects rotation', () => {
     const r = shape('rect', { x: 0, y: 40, w: 100, h: 20, rotation: 90 })

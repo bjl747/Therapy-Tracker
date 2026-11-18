@@ -1,6 +1,7 @@
 // Glue between the pure engine and the app: how bound images resolve.
 
 import type { ImageEl } from './engine/model'
+import { fieldValue } from './engine/fields'
 import type { BoundImage } from './engine/render'
 import { photoUrl, resolveLocation, cityIndex } from './photos/cities'
 
@@ -10,12 +11,12 @@ import { photoUrl, resolveLocation, cityIndex } from './photos/cities'
  */
 export function resolveImage(el: ImageEl, fields: Record<string, string>): BoundImage | null {
   if (!el.bind) return null
-  const pinned = fields[`${el.bind}__photo`]
+  const pinned = fieldValue(fields, `${el.bind}__photo`)
   if (pinned) {
     const p = cityIndex().find((c) => c.id === pinned)
     if (p) return { src: photoUrl(p.id), focus: p.focus, credit: { ...p.credit } }
   }
-  const value = fields[el.bind]
+  const value = fieldValue(fields, el.bind)
   if (!value) return null
   const m = resolveLocation(value)
   return m ? { src: photoUrl(m.photo.id), focus: m.photo.focus, credit: { ...m.photo.credit } } : null

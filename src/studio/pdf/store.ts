@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { releaseAllSources, releaseSource } from './raster'
 import {
   type Annotation,
   type Hist,
@@ -203,6 +204,11 @@ export const usePdfStudio = create<State>((set, get) => {
     setLoading: (delta) => set((s) => ({ loading: Math.max(0, s.loading + delta) })),
     notify: (kind, text) => set((s) => ({ notices: [...s.notices.slice(-4), { id: uid('n'), kind, text }] })),
     dismiss: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) })),
-    reset: () => set({ ...initial, hist: emptyHist<PageItem[]>() }),
+    reset: () => {
+      // free every source's object URLs, thumbnails and pdf.js documents
+      for (const id of Object.keys(get().sources)) releaseSource(id)
+      releaseAllSources()
+      set({ ...initial, hist: emptyHist<PageItem[]>() })
+    },
   }
 })

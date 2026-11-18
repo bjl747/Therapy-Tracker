@@ -1,6 +1,6 @@
 // PNG / JPG export, clipboard and download helpers.
 
-import { renderPageToCanvas, type RenderOptions } from '../engine/render'
+import { renderPageToCanvas, type ExportReport, type RenderOptions } from '../engine/render'
 import type { Design } from '../engine/model'
 
 export interface RasterOptions {
@@ -8,6 +8,8 @@ export interface RasterOptions {
   scale: number
   transparent?: boolean
   resolveImage?: RenderOptions['resolveImage']
+  /** collects photos that couldn't load (drawn as placeholders) so the caller can warn */
+  report?: ExportReport
 }
 
 function canvasToBlob(c: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -25,7 +27,7 @@ export async function exportPng(design: Design, pageIndex: number, opts: RasterO
     scale: opts.scale,
     transparent: opts.transparent,
     resolveImage: opts.resolveImage,
-  })
+  }, opts.report)
   return canvasToBlob(c, 'image/png')
 }
 
@@ -35,21 +37,47 @@ export async function exportJpg(
   pageIndex: number,
   opts: Omit<RasterOptions, 'transparent'> & { quality?: number },
 ): Promise<Blob> {
-  const c = await renderPageToCanvas(design, pageIndex, { scale: opts.scale, resolveImage: opts.resolveImage })
+  const c = await renderPageToCanvas(design, pageIndex, { scale: opts.scale, resolveImage: opts.resolveImage }, opts.report)
   return canvasToBlob(c, 'image/jpeg', opts.quality ?? 0.92)
 }
 
-export async function copyPngToClipboard(blob: Blob): Promise<void> {
+const clipboardError = (e: unknown) =>
+  new Error(
+    `Could not copy the image to the clipboard (${e instanceof Error ? e.message : String(e)}). Check browser permissions or download the PNG instead.`,
+  )
+
+/**
+ * Copy a PNG that is still being made. Call this SYNCHRONOUSLY inside the
+ * click handler (before any await): Safari only allows clipboard writes that
+ * start in the user gesture, and both Safari and Chrome accept a
+ * Promise<Blob> as the ClipboardItem value — so the write starts now and the
+ * image arrives when it's ready.
+ *
+ *   onClick={() => void copyPngPromiseToClipboard(makePng()).then(ok, fail)}
+ */
+export function copyPngPromiseToClipboard(png: Promise<Blob>): Promise<void> {
   const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem
   if (typeof navigator === 'undefined' || !navigator.clipboard || typeof navigator.clipboard.write !== 'function' || !Item) {
-    throw new Error('Copying images is not supported in this browser. Download the PNG instead.')
+    png.catch(() => undefined) // nobody will consume it
+    return Promise.reject(new Error('Copying images is not supported in this browser. Download the PNG instead.'))
   }
+  let write: Promise<void>
   try {
-    await navigator.clipboard.write([new Item({ 'image/png': blob })])
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Could not copy the image to the clipboard (${msg}). Check browser permissions or download the PNG instead.`)
+    write = navigator.clipboard.write([new Item({ 'image/png': png })])
+  } catch {
+    // an older ClipboardItem without promise values: write once the PNG exists
+    write = png.then((b) => navigator.clipboard.write([new Item({ 'image/png': b })]))
   }
+  return write.catch(async (e) => {
+    // if making the PNG failed, that's the useful error — not the clipboard's
+    await png
+    throw clipboardError(e)
+  })
+}
+
+/** copy a finished PNG (prefer copyPngPromiseToClipboard from a click: Safari) */
+export function copyPngToClipboard(blob: Blob): Promise<void> {
+  return copyPngPromiseToClipboard(Promise.resolve(blob))
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

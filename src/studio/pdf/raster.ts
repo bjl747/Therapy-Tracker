@@ -12,7 +12,7 @@ import {
   displaySize,
   rotationMatrix,
 } from './lib'
-import { getPdfDoc, getSourceBytes, getSourceMime } from './pdfjs'
+import { forgetSource, getPdfDoc, getSourceBytes, getSourceMime } from './pdfjs'
 
 const imgCache = new Map<string, Promise<HTMLImageElement>>()
 
@@ -34,17 +34,32 @@ export function annotationImage(dataUrl: string): Promise<HTMLImageElement> {
   return p
 }
 
-const srcImgCache = new Map<string, Promise<HTMLImageElement>>()
+/** decoded source images, with the object URL that backs each (revoked when the source is dropped) */
+const srcImgCache = new Map<string, { url: string; img: Promise<HTMLImageElement> }>()
 export function sourceImage(sourceId: string): Promise<HTMLImageElement> {
-  let p = srcImgCache.get(sourceId)
-  if (!p) {
+  let hit = srcImgCache.get(sourceId)
+  if (!hit) {
     const bytes = getSourceBytes(sourceId)
     if (!bytes) return Promise.reject(new Error('Source image is no longer in memory'))
     const url = URL.createObjectURL(new Blob([bytes.slice()], { type: getSourceMime(sourceId) }))
-    p = loadImg(url)
-    srcImgCache.set(sourceId, p)
+    const img = loadImg(url)
+    const entry = { url, img }
+    // a failed decode: free the URL now and let the next call try again
+    img.catch(() => {
+      URL.revokeObjectURL(url)
+      if (srcImgCache.get(sourceId) === entry) srcImgCache.delete(sourceId)
+    })
+    hit = entry
+    srcImgCache.set(sourceId, hit)
   }
-  return p
+  return hit.img
+}
+
+function dropSourceImage(sourceId: string): void {
+  const hit = srcImgCache.get(sourceId)
+  if (!hit) return
+  srcImgCache.delete(sourceId)
+  URL.revokeObjectURL(hit.url)
 }
 
 /** Paint annotations in base space; the ctx must already hold the base->canvas transform. */
@@ -191,5 +206,18 @@ export function dropThumbsFor(sourceId: string): void {
       void v.then((u) => URL.revokeObjectURL(u)).catch(() => undefined)
     }
   }
-  srcImgCache.delete(sourceId)
+  dropSourceImage(sourceId)
+}
+
+/** a source is gone for good: free its thumbnails, image URL and pdf.js document */
+export function releaseSource(sourceId: string): void {
+  dropThumbsFor(sourceId)
+  forgetSource(sourceId)
+}
+
+/** everything is cleared (PDF Studio reset): free every cached URL */
+export function releaseAllSources(): void {
+  const ids = new Set<string>(srcImgCache.keys())
+  for (const k of thumbCache.keys()) ids.add(k.slice(0, k.indexOf(':')))
+  for (const id of ids) releaseSource(id)
 }

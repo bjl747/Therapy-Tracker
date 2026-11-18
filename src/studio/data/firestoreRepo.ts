@@ -8,6 +8,7 @@
 //   hub_studio/assets/rows/{id}      brand files metadata (bytes in Storage)
 // ─────────────────────────────────────────────────────────────
 
+import { decodeImageFile } from './imageFile'
 import {
   collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, setDoc, where,
 } from 'firebase/firestore'
@@ -93,10 +94,13 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       return (await getDocs(query(rows('assets'), orderBy('createdAt', 'desc')))).docs.map((s) => s.data() as BrandAsset)
     },
     async uploadAsset(file, kind) {
-      const bmp = await createImageBitmap(file)
+      // dimensions only (the original file goes to Storage); SVG-safe, unlike createImageBitmap
+      const img = await decodeImageFile(file)
+      const { w, h } = img
+      img.close()
       const id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
       const url = await uploadBlob(`studio/assets/${id}-${file.name.replace(/[^\w.-]+/g, '_').slice(0, 60)}`, file)
-      const a: BrandAsset = { id, name: file.name.slice(0, 80), url, kind, w: bmp.width, h: bmp.height, createdAt: Date.now() }
+      const a: BrandAsset = { id, name: file.name.slice(0, 80), url, kind, w: Math.round(w), h: Math.round(h), createdAt: Date.now() }
       await setDoc(row('assets', id), a)
       return a
     },

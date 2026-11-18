@@ -26,6 +26,7 @@ import { formatLocation } from '../photos/location'
 import { prepareDesign, resolveImage } from '../services'
 import { repo } from '../data'
 import { useToast } from '../ui/toast'
+import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
 import { kitWarnings } from './warnings'
@@ -46,6 +47,11 @@ function saveDraft(f: Record<string, string>) {
   } catch {
     /* private mode */
   }
+}
+
+/** the full-size PNG of a design, as a promise (fonts + photo loaded first) */
+function pngOf(d: Design): Promise<Blob> {
+  return prepareDesign(d).then(() => exportPng(d, 0, { scale: 1, resolveImage }))
 }
 
 const RECENT_KEY = 'studio.kit.recent'
@@ -193,10 +199,8 @@ export function JobKit() {
 
   const copyImage = async (size: string) => {
     try {
-      const { exportPng, copyPngToClipboard } = await import('../export/raster')
-      const d = designs[size]
-      await prepareDesign(d)
-      await copyPngToClipboard(await exportPng(d, 0, { scale: 1, resolveImage }))
+      // the clipboard write starts synchronously in the click (Safari requires it)
+      await copyPngPromiseToClipboard(pngOf(designs[size]))
       toast('Image copied', 'Paste it straight into LinkedIn, Facebook or Teams.')
       rememberJob(fields)
     } catch (e) {
@@ -212,10 +216,7 @@ export function JobKit() {
     // still allow the new tab for a few seconds after the click.
     let copied = false
     try {
-      const { exportPng, copyPngToClipboard } = await import('../export/raster')
-      const d = designs[size]
-      await prepareDesign(d)
-      await copyPngToClipboard(await exportPng(d, 0, { scale: 1, resolveImage }))
+      await copyPngPromiseToClipboard(pngOf(designs[size]))
       copied = true
     } catch {
       /* fall through — caption is still pre-filled */

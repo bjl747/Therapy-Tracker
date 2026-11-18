@@ -1,7 +1,7 @@
 // Multi-page PDF: every page is rendered with the shared renderer and
 // embedded as an image. 1 design px = 0.75 pt (72 dpi ↔ 96 css px).
 
-import { renderPageToCanvas, type RenderOptions } from '../engine/render'
+import { renderPageToCanvas, type ExportReport, type RenderOptions } from '../engine/render'
 import type { Design } from '../engine/model'
 
 export interface PdfOptions {
@@ -13,6 +13,8 @@ export interface PdfOptions {
   /** JPEG quality, default 0.92 */
   quality?: number
   onProgress?: (p: number) => void
+  /** collects photos that couldn't load (drawn as placeholders) */
+  report?: ExportReport
 }
 
 const PX_TO_PT = 0.75
@@ -38,7 +40,7 @@ export async function exportDesignPdf(design: Design, opts: PdfOptions = {}): Pr
   const n = design.pages.length
   for (let i = 0; i < n; i++) {
     // JPEG can't hold alpha; the renderer paints the page background, so it's opaque
-    const canvas = await renderPageToCanvas(design, i, { scale, resolveImage: opts.resolveImage })
+    const canvas = await renderPageToCanvas(design, i, { scale, resolveImage: opts.resolveImage }, opts.report)
     const bytes = await canvasBytes(canvas, png ? 'image/png' : 'image/jpeg', opts.quality ?? 0.92)
     const img = png ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
     const w = design.w * PX_TO_PT

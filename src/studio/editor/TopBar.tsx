@@ -24,11 +24,11 @@ import {
   Undo2,
 } from 'lucide-react'
 import type { Design } from '../engine/model'
-import { drawPage, measure, pageImageSrcs } from '../engine/render'
+import { drawPage, exportWarning, measure, newExportReport, pageImageSrcs, playLength, type ExportReport } from '../engine/render'
 import { loadImage } from '../engine/images'
 import { fieldValue, markerKeys } from '../engine/fields'
-import { resolveImage } from '../services'
-import { copyPngToClipboard, downloadBlob, exportJpg, exportPng, safeFileName } from '../export/raster'
+import { prepareDesign, resolveImage } from '../services'
+import { copyPngPromiseToClipboard, downloadBlob, exportJpg, exportPng, safeFileName } from '../export/raster'
 import { designHasAnimation, exportGif } from '../export/animate'
 import { exportDesignPdf } from '../export/pdf'
 import { makeZip } from '../export/zip'
@@ -38,6 +38,8 @@ import { lintDesign, type LintIssue } from './lint'
 import { toast } from './actions'
 import { IconBtn, MenuList, Modal, MOD, PopButton } from './ui'
 import { ZOOM_STEPS } from './viewport'
+
+const fmtSec = (s: number) => String(Math.round(s * 10) / 10)
 
 export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'readonly'
 
@@ -284,13 +286,20 @@ function ExportPanel({ close }: { close: () => void }) {
   const stem = safeFileName(design.name)
   const pageStem = many ? `${stem}-page-${pageIndex + 1}` : stem
 
-  const run = async (label: string, fn: (d: Design, setP: (p: number) => void) => Promise<string | void>, keepOpen = false) => {
+  /** fonts + city data first (like the Job Kit) — an export must never use fallback fonts or miss a city photo */
+  const prep = (d: Design) => prepareDesign(d).catch(() => undefined)
+  // NB: everything up to fn's first await runs synchronously inside the click
+  // (Copy relies on that: Safari only allows clipboard writes in the gesture)
+  const run = async (label: string, fn: (d: Design, setP: (p: number) => void, report: ExportReport) => Promise<string | void>, keepOpen = false) => {
     if (job) return
     setError(null)
     setJob({ label, progress: null })
+    const report = newExportReport()
     try {
-      const msg = await fn(useEditor.getState().design!, (p) => alive.current && setJob({ label, progress: p }))
-      if (msg) toast(msg)
+      const msg = await fn(useEditor.getState().design!, (p) => alive.current && setJob({ label, progress: p }), report)
+      const warn = exportWarning(report)
+      if (warn) toast(msg ? `${msg} · ${warn}` : warn)
+      else if (msg) toast(msg)
       if (alive.current && !keepOpen) close()
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : 'Something went wrong while exporting')
@@ -299,25 +308,43 @@ function ExportPanel({ close }: { close: () => void }) {
     }
   }
   const png = (scale: number) =>
-    run(`PNG ${scale}×`, async (d) => downloadBlob(await exportPng(d, pageIndex, { scale, resolveImage }), `${pageStem}${scale > 1 ? `@${scale}x` : ''}.png`))
-  const jpg = () => run('JPG', async (d) => downloadBlob(await exportJpg(d, pageIndex, { scale: 1, resolveImage, quality: 0.92 }), `${pageStem}.jpg`))
+    run(`PNG ${scale}×`, async (d, _p, report) => {
+      await prep(d)
+      downloadBlob(await exportPng(d, pageIndex, { scale, resolveImage, report }), `${pageStem}${scale > 1 ? `@${scale}x` : ''}.png`)
+    })
+  const jpg = () =>
+    run('JPG', async (d, _p, report) => {
+      await prep(d)
+      downloadBlob(await exportJpg(d, pageIndex, { scale: 1, resolveImage, quality: 0.92, report }), `${pageStem}.jpg`)
+    })
   const gif = () =>
-    run('GIF', async (d, setP) => {
+    run('GIF', async (d, setP, report) => {
+      await prep(d)
       const scale = Math.min(1, 720 / Math.max(d.w, d.h))
-      const blob = await exportGif(d, pageIndex, { scale, fps: 15, resolveImage }, (p, stage) => setP(stage === 'render' ? p * 0.5 : 0.5 + p * 0.5))
+      const blob = await exportGif(d, pageIndex, { scale, fps: 15, resolveImage, report }, (p, stage) => setP(stage === 'render' ? p * 0.5 : 0.5 + p * 0.5))
       downloadBlob(blob, `${pageStem}.gif`)
     })
-  const pdf = () => run('PDF', async (d) => downloadBlob(await exportDesignPdf(d, { scale: 2, resolveImage }), `${stem}.pdf`))
+  const pdf = () =>
+    run('PDF', async (d, setP, report) => {
+      await prep(d)
+      downloadBlob(await exportDesignPdf(d, { scale: 2, resolveImage, report, onProgress: setP }), `${stem}.pdf`)
+    })
   const copy = () =>
-    run('Copy', async (d) => {
-      await copyPngToClipboard(await exportPng(d, pageIndex, { scale: 1, resolveImage }))
+    run('Copy', async (d, _p, report) => {
+      // the clipboard write must start synchronously in the click (Safari); the PNG follows
+      const made = (async () => {
+        await prep(d)
+        return exportPng(d, pageIndex, { scale: 1, resolveImage, report })
+      })()
+      await copyPngPromiseToClipboard(made)
       return 'Image copied — paste it straight into LinkedIn'
     })
   const zip = () =>
-    run('ZIP', async (d, setP) => {
+    run('ZIP', async (d, setP, report) => {
+      await prep(d)
       const files: { name: string; data: Blob }[] = []
       for (let i = 0; i < d.pages.length; i++) {
-        files.push({ name: `${stem}-page-${String(i + 1).padStart(2, '0')}.png`, data: await exportPng(d, i, { scale: 1, resolveImage }) })
+        files.push({ name: `${stem}-page-${String(i + 1).padStart(2, '0')}.png`, data: await exportPng(d, i, { scale: 1, resolveImage, report }) })
         setP((i + 1) / (d.pages.length + 1))
       }
       downloadBlob(await makeZip(files), `${stem}.zip`)
@@ -362,7 +389,7 @@ function ExportPanel({ close }: { close: () => void }) {
           </button>,
         )}
         {item(<FileImage size={16} />, 'JPG', 'Smaller file, no transparency', jpg)}
-        {item(<Film size={16} />, 'GIF', canGif ? `Animated · ${page?.duration ?? 4}s` : 'Add animation in the Animate panel first', gif, !canGif)}
+        {item(<Film size={16} />, 'GIF', canGif ? `Animated · ${fmtSec(page ? playLength(page, design.fields) : 4)}s` : 'Add animation in the Animate panel first', gif, !canGif)}
         {item(<FileText size={16} />, 'PDF', many ? `All ${design.pages.length} pages` : 'Print-ready document', pdf)}
         {item(<FileArchive size={16} />, 'All pages as ZIP', many ? `${design.pages.length} PNG files` : 'One PNG per page', zip, !many)}
       </div>
@@ -409,7 +436,8 @@ function PreviewPlayer() {
   const canvas = useRef<HTMLCanvasElement>(null)
   const bar = useRef<HTMLDivElement>(null)
   const page = design.pages[Math.min(index, design.pages.length - 1)]
-  const dur = page.duration ?? 4
+  // stretched so every entrance finishes; after it, the final static state is held
+  const dur = playLength(page, design.fields)
   const animated = designHasAnimation(page)
   // fit the viewport: leave room for the modal chrome
   const [box, setBox] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
@@ -438,12 +466,12 @@ function PreviewPlayer() {
       if (!alive) return
       if (!t0) t0 = now
       const t = ((now - t0) / 1000) % (dur + hold)
-      drawPage(ctx, design, page, { scale, time: animated ? Math.min(t, dur) : undefined, resolveImage })
+      drawPage(ctx, design, page, { scale, time: animated && t < dur ? t : undefined, resolveImage })
       if (bar.current) bar.current.style.width = `${Math.min(100, (t / dur) * 100)}%`
       raf = requestAnimationFrame(frame)
     }
     // start the clock once the photos are in, so the first loop isn't blank
-    void Promise.all(pageImageSrcs(design, page, { resolveImage }).map(loadImage)).then(() => {
+    void Promise.all(pageImageSrcs(design, page, { resolveImage }).map((src) => loadImage(src))).then(() => {
       if (alive) raf = requestAnimationFrame(frame)
     })
     return () => {
@@ -470,7 +498,7 @@ function PreviewPlayer() {
               Page {i + 1}
             </button>
           ))}
-        <span className="whitespace-nowrap text-[12px] text-ink-3">{animated ? `${dur}s · loops` : 'No animation on this page yet — try Animate → Auto-animate'}</span>
+        <span className="whitespace-nowrap text-[12px] text-ink-3">{animated ? `${fmtSec(dur)}s · loops` : 'No animation on this page yet — try Animate → Auto-animate'}</span>
       </div>
     </div>
   )

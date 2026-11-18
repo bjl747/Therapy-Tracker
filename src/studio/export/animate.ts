@@ -1,8 +1,7 @@
 // Animated GIF export: steps `time` through the page's entrance animations /
 // Ken Burns with the shared renderer, then encodes.
 
-import { drawPage, pageImageSrcs, type RenderOptions } from '../engine/render'
-import { loadImage } from '../engine/images'
+import { drawPage, playLength, preloadPageImages, type ExportReport, type RenderOptions } from '../engine/render'
 import type { Design, Page } from '../engine/model'
 import { encodeGifAsync, type GifFrame } from './gif'
 
@@ -10,7 +9,8 @@ export interface GifExportOptions {
   scale: number
   /** default 15 */
   fps?: number
-  /** seconds of animation; default page.duration ?? 4 */
+  /** seconds of animation; default page.duration ?? 4. Always stretched so
+   *  every entrance animation finishes (see playLength). */
   duration?: number
   /** seconds the final frame is held; default 1.5 */
   hold?: number
@@ -19,6 +19,8 @@ export interface GifExportOptions {
   dither?: boolean
   /** 0 = forever (default) */
   loop?: number
+  /** collects photos that couldn't load (drawn as placeholders) */
+  report?: ExportReport
 }
 
 export type GifProgress = (p: number, stage: 'render' | 'encode') => void
@@ -38,12 +40,12 @@ export async function exportGif(
   const page = design.pages[pageIndex]
   if (!page) throw new Error('No such page')
   const fps = Math.max(1, Math.min(50, opts.fps ?? 15))
-  const duration = Math.max(0, opts.duration ?? page.duration ?? 4)
+  const duration = playLength(page, design.fields, Math.max(0, opts.duration ?? page.duration ?? 4))
   const hold = Math.max(0, opts.hold ?? 1.5)
   const w = Math.max(1, Math.round(design.w * opts.scale))
   const h = Math.max(1, Math.round(design.h * opts.scale))
 
-  await Promise.all(pageImageSrcs(design, page, opts).map(loadImage))
+  await preloadPageImages(design, page, opts, opts.report)
 
   const canvas = document.createElement('canvas')
   canvas.width = w
@@ -69,8 +71,9 @@ export async function exportGif(
       onProgress?.((i + 1) / (n + 1), 'render')
       if (i % 2 === 1) await tick()
     }
-    // final frame at the end state, held
-    frames.push({ data: grab(duration), delayMs: Math.max(20, hold * 1000) })
+    // final frame = the finished (static) design, held — never a mid-animation
+    // state, even if an element's delay + duration runs past the page length
+    frames.push({ data: grab(undefined), delayMs: Math.max(20, hold * 1000) })
     onProgress?.(1, 'render')
   }
 

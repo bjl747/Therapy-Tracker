@@ -4,6 +4,7 @@
 // interface on Firestore (hub_studio/...) + Firebase Storage.
 // ─────────────────────────────────────────────────────────────
 
+import { decodeImageFile, rasterSize } from './imageFile'
 import type { Design } from '../engine/model'
 import type { TemplateDef } from '../templates/types'
 
@@ -78,16 +79,21 @@ const get = <T>(store: StoreName, key: string) => tx<T | undefined>(store, 'read
 const put = (store: StoreName, key: string, v: unknown) => tx(store, 'readwrite', (s) => s.put(v, key))
 const del = (store: StoreName, key: string) => tx(store, 'readwrite', (s) => s.delete(key))
 
-/** downscale an uploaded image and return a data URL (demo storage) */
+/** downscale an uploaded image and return a data URL (demo storage).
+ *  SVGs (which createImageBitmap rejects in Chrome) are rasterised to PNG. */
 export async function fileToDataUrl(file: File, max = 2000): Promise<{ url: string; w: number; h: number }> {
-  const bmp = await createImageBitmap(file)
-  const s = Math.min(1, max / Math.max(bmp.width, bmp.height))
-  const c = document.createElement('canvas')
-  c.width = Math.round(bmp.width * s)
-  c.height = Math.round(bmp.height * s)
-  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height)
-  const png = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/svg+xml'
-  return { url: c.toDataURL(png ? 'image/png' : 'image/jpeg', 0.9), w: c.width, h: c.height }
+  const img = await decodeImageFile(file)
+  try {
+    const size = rasterSize(img.w, img.h, max, img.svg)
+    const c = document.createElement('canvas')
+    c.width = size.w
+    c.height = size.h
+    c.getContext('2d')!.drawImage(img.source, 0, 0, c.width, c.height)
+    const png = img.svg || file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/gif'
+    return { url: c.toDataURL(png ? 'image/png' : 'image/jpeg', 0.9), w: c.width, h: c.height }
+  } finally {
+    img.close()
+  }
 }
 
 export const localRepo: StudioRepo = {

@@ -259,22 +259,37 @@ function BrandTab({ canEdit }: { canEdit: boolean }) {
   const [assets, setAssets] = useState<BrandAsset[] | null>(null)
   const [kind, setKind] = useState<BrandAsset['kind']>('logo')
   const input = useRef<HTMLInputElement>(null)
-  const load = () => void repo.listAssets().then(setAssets)
+  const load = () =>
+    void repo
+      .listAssets()
+      .then(setAssets)
+      .catch(() => setAssets((cur) => cur ?? []))
   useEffect(load, [])
   const upload = async (files: FileList | null) => {
     if (!files?.length) return
-    for (const f of Array.from(files)) {
-      if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(f.type)) {
-        toast('Skipped a file', `${f.name} isn’t a PNG, JPG, WebP or SVG.`, 'error')
-        continue
+    // copy first: resetting the <input> (so the same file can be picked again) empties the live FileList
+    const list = Array.from(files)
+    if (input.current) input.current.value = ''
+    try {
+      for (const f of list) {
+        if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(f.type)) {
+          toast('Skipped a file', `${f.name} isn’t a PNG, JPG, WebP or SVG.`, 'error')
+          continue
+        }
+        if (f.size > 15 * 1024 * 1024) {
+          toast('Skipped a file', `${f.name} is over 15 MB.`, 'error')
+          continue
+        }
+        // one bad file must not stop the rest
+        try {
+          await repo.uploadAsset(f, kind)
+        } catch (e) {
+          toast('Couldn’t upload a file', `${f.name}: ${e instanceof Error ? e.message : 'it could not be read'}.`, 'error')
+        }
       }
-      if (f.size > 15 * 1024 * 1024) {
-        toast('Skipped a file', `${f.name} is over 15 MB.`, 'error')
-        continue
-      }
-      await repo.uploadAsset(f, kind)
+    } finally {
+      load()
     }
-    load()
   }
   const builtIn = [
     { name: 'GQR Healthcare logo', url: '/brand/gqr-healthcare.png' },

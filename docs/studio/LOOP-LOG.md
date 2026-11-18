@@ -117,3 +117,24 @@
 - Demo sidebar "View as" role switch to preview recruiter vs. admin.
 - Bug caught by the e2e test and fixed: Job Kit re-render loop (template objects rebuilt each
   render) → memoised library + stable effect deps.
+
+### Round 11 — independent bug review (fresh agent, not anchored on my reviews)
+15 findings, all fixed and re-verified with the 6 workflow scripts + 242 unit tests:
+- HIGH: typing `{{constructor}}` crashed the editor and the autosaved design could never reopen →
+  own-property field lookup (`fieldValue`) + a Studio error boundary with "Back to Studio".
+- GIF/Preview ended with late-animated elements invisible → final frame drawn in its finished
+  state; play length covers the latest animation; delay slider clamped.
+- Invisible roundup rows were clickable/deletable → shared `isDrawn()` used by hit-test, marquee,
+  snapping, select-all, lint; Layers shows "shown when Job 4 is filled".
+- Undo mid-drag corrupted history; autosave stalled while typing in a field ("Saving…" lied) →
+  gesture kinds (pointer vs. edit), truthful "Unsaved changes / Saving… / Saved".
+- SVG logo uploads failed and silently stopped the batch → `<img>` decode fallback, SVG → PNG,
+  per-file error toasts.
+- GIF worker fallback re-encoded detached buffers → worker "ready" handshake before transfer.
+- Blur missing in Safari → our own pixel blur (3-pass box ≈ Gaussian).
+- Safari "Copy image" → ClipboardItem with a promise created inside the click (editor + kit).
+- Failed image/city loads stuck for the session → time-boxed retries; exports warn when a photo
+  couldn't load.
+- "St Paul"/"Ft Worth"/"Mt Vernon" without dots, long words mid-line not wrapping, location box
+  overwriting "Clear all"/Recent picks, LinkedIn false "allow pop-ups", PDF object-URL leak,
+  editor exports not waiting for fonts, double-click making two kits.

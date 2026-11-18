@@ -32,3 +32,6 @@ scope.onmessage = (e) => {
     scope.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) })
   }
 }
+
+// tell encodeGifAsync the script loaded — only now does it transfer the frames
+scope.postMessage({ type: 'ready' })

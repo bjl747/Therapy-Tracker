@@ -66,8 +66,12 @@ Used by: move, resize, rotate, Alt-drag duplicate (the copies are added inside
 the gesture), photo re-framing, inline text editing (begin on mount, end on
 commit; an emptied text box is removed in the same step), label scrubbing,
 sliders, the native colour input, and each visit to a Fields input.
-`Esc` during a pointer gesture restores `gestureBase`. Autosave waits for the
-gesture to end.
+`Esc` during a pointer gesture restores `gestureBase`. Gestures have a kind:
+`beginGesture('pointer')` (default: drags, sliders, scrubs, colour input) —
+autosave waits for it to end and undo/redo are ignored while it is open;
+`beginGesture('edit')` (Fields inputs, inline text) — autosave keeps saving as
+you type, and undo first closes the visit and undoes it as one step. The save
+chip reads "Unsaved changes" → "Saving…" (only during the write) → "Saved".
 
 Stage gestures: `pending → move | marquee`, `resize`, `rotate`, `pan`, `crop`,
 `pinch`. A press only becomes a drag after 3 px (8 px touch); otherwise it is a
