@@ -28,6 +28,10 @@ const KINDS: { value: NonNullable<FieldDef['kind']>; label: string }[] = [
   { value: 'long', label: 'Long text' },
 ]
 
+/** Unsaved template edits by template id, kept while the saved template hasn't changed underneath them
+ *  (`base` = its updatedAt when editing began). Module-level so they outlive leaving the Templates page. */
+const pendingEdits = new Map<string, { base: number | undefined; draft: TemplateDef }>()
+
 export function TemplatesAdmin() {
   const { user } = useAuth()
   const nav = useNavigate()
@@ -39,9 +43,31 @@ export function TemplatesAdmin() {
   const [draft, setDraft] = useState<TemplateDef | null>(null)
   const [creating, setCreating] = useState(false)
 
-  useEffect(() => setDraft(current ? structuredClone(current) : null), [current?.id, current?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!current) return setDraft(null)
+    const p = pendingEdits.get(current.id)
+    setDraft(structuredClone(p && p.base === current.updatedAt ? p.draft : current))
+  }, [current?.id, current?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (user.role !== 'admin')
+  const dirty = !!draft && !!current && JSON.stringify(draft) !== JSON.stringify(current)
+  // keep unsaved edits when the admin leaves the page (they used to vanish without a word)
+  useEffect(() => {
+    if (!current || !draft || draft.id !== current.id) return
+    if (dirty) pendingEdits.set(current.id, { base: current.updatedAt, draft })
+    else pendingEdits.delete(current.id)
+  }, [draft, current, dirty])
+  // and warn before the tab is closed or reloaded with them unsaved
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  if (user?.role !== 'admin')
     return (
       <div className="card p-8 text-center">
         <ShieldAlert className="mx-auto text-ink-3 mb-2" />
@@ -50,7 +76,6 @@ export function TemplatesAdmin() {
       </div>
     )
 
-  const dirty = !!draft && !!current && JSON.stringify(draft) !== JSON.stringify(current)
   const problems = draft ? templateProblems(draft) : []
   const select = (id: string) => setParams({ t: id })
   const update = (patch: Partial<TemplateDef>) => setDraft((d) => (d ? { ...d, ...patch } : d))

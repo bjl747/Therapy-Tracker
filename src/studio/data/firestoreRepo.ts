@@ -21,16 +21,32 @@ const rows = (kind: string) => collection(db, 'hub_studio', kind, 'rows')
 const row = (kind: string, id: string) => doc(db, 'hub_studio', kind, 'rows', id)
 const uid = () => auth.currentUser?.uid ?? ''
 
-async function uploadBlob(path: string, blob: Blob): Promise<string> {
-  const storage = await loadStorage()
-  const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage')
+/** `cache`: long for files at a new path every time; thumbnails are overwritten in place, so no-cache */
+async function uploadBlob(path: string, blob: Blob, cache = 'public,max-age=31536000'): Promise<string> {
+  // the hub's loadStorage() resolves to the firebase/storage module plus its `storage` instance
+  const { ref, uploadBytes, getDownloadURL, storage } = await loadStorage()
   const r = ref(storage, path)
-  await uploadBytes(r, blob, { contentType: blob.type || 'application/octet-stream', cacheControl: 'public,max-age=31536000' })
+  await uploadBytes(r, blob, { contentType: blob.type || 'application/octet-stream', cacheControl: cache })
   return getDownloadURL(r)
 }
 
-async function dataUrlToBlob(u: string): Promise<Blob> {
-  return (await fetch(u)).blob()
+/** decoded by hand: the hub's CSP connect-src has no data:, so fetch(dataUrl) is refused */
+function dataUrlToBlob(u: string): Blob {
+  const comma = u.indexOf(',')
+  const head = u.slice(5, comma) // after "data:"
+  const type = head.split(';')[0] || 'application/octet-stream'
+  const body = u.slice(comma + 1)
+  if (!head.includes(';base64')) return new Blob([decodeURIComponent(body)], { type })
+  const bin = atob(body)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return new Blob([out], { type })
+}
+
+/** Firestore (as the hub sets it up) refuses `undefined` anywhere in a document; the editor leaves some
+ *  behind (ungroup, removed animations, replaced photos), so drop them before every write */
+function noUndefined<T>(x: T): T {
+  return JSON.parse(JSON.stringify(x)) as T
 }
 
 /** move any data: URLs inside a design into Storage (Firestore docs max 1 MB) */
@@ -39,10 +55,10 @@ async function externaliseImages(d: Design): Promise<Design> {
   for (const p of out.pages)
     for (const el of p.elements)
       if (el.type === 'image' && el.src.startsWith('data:')) {
-        const blob = await dataUrlToBlob(el.src)
+        const blob = dataUrlToBlob(el.src)
         el.src = await uploadBlob(`studio/${uid()}/img/${el.id}-${Date.now().toString(36)}`, blob)
       }
-  return out
+  return noUndefined(out)
 }
 
 export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
@@ -63,7 +79,8 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       const clean = await externaliseImages({ ...d, ownerUid: d.ownerUid ?? uid() })
       const updatedAt = Date.now()
       let thumbUrl: string | undefined
-      if (thumb?.startsWith('data:')) thumbUrl = await uploadBlob(`studio/${clean.ownerUid}/thumbs/${d.id}.png`, await dataUrlToBlob(thumb))
+      // thumbnails go under the SAVER's folder: a manager saving a recruiter's design can't write theirs
+      if (thumb?.startsWith('data:')) thumbUrl = await uploadBlob(`studio/${uid()}/thumbs/${d.id}.png`, dataUrlToBlob(thumb), 'no-cache')
       await setDoc(row('designs', d.id), { ...clean, updatedAt, savedAt: serverTimestamp() })
       const summary: DesignSummary = {
         id: d.id,
@@ -85,7 +102,7 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       return (await getDocs(rows('templates'))).docs.map((s) => s.data() as TemplateDef)
     },
     async saveTemplate(t) {
-      await setDoc(row('templates', t.id), { ...t, updatedAt: Date.now() })
+      await setDoc(row('templates', t.id), noUndefined({ ...t, updatedAt: Date.now() }))
     },
     async deleteTemplate(id) {
       await deleteDoc(row('templates', id))

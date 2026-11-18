@@ -5,7 +5,7 @@ import { ROLE_DEFAULTS } from '@/lib/access'
 import { DEMO_USER } from '@/lib/demo'
 
 interface AuthValue {
-  user: HubUser
+  user: HubUser | null // the hub's type: null before sign-in (Studio only renders after it)
   can: (f: FeatureKey) => AccessLevel
   isManager: boolean
   /** SHIM ONLY (demo): preview the app as another role */

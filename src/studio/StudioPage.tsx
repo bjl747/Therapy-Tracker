@@ -48,7 +48,7 @@ function EditorRoute() {
   const { id = '' } = useParams()
   const nav = useNavigate()
   const { can, user } = useAuth()
-  const isAdmin = user.role === 'admin'
+  const isAdmin = user?.role === 'admin'
   const [meta, setMeta] = useState<Design['source'] | null>(null)
   useEffect(() => {
     void repo.getDesign(id).then((d) => setMeta(d?.source ?? null))

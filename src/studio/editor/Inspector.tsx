@@ -2,7 +2,7 @@
 // through the store, so sliders / scrubs are single undo steps and brand
 // locks are enforced in one place.
 
-import { safeUrl } from '@/lib/sanitize'
+import { safeUrl } from '@/lib/utils'
 import { useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {

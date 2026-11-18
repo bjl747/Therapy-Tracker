@@ -74,6 +74,15 @@ function applyForm(doc: PDFDocument, lib: PdfLib, values: Record<string, FormVal
     } catch {
       warnings.push('The form could not be flattened; fields stay editable in some viewers.')
     }
+  } else {
+    // pages are copied into a new document, so the source is never saved and pdf-lib never redraws the
+    // fields: draw the filled-in values now or they look blank in every viewer
+    try {
+      const font = doc.embedStandardFont(lib.StandardFonts.Helvetica)
+      form.updateFieldAppearances(font)
+    } catch {
+      warnings.push('Some filled-in form values could not be drawn (unsupported characters); turn on Flatten to keep them.')
+    }
   }
 }
 

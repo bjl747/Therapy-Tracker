@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatTitle, bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, tidyField } from './normalize'
-import { caption, hashtags } from './captions'
+import { article, caption, hashtags } from './captions'
 import { matchHeader, parseJobs, parseTable } from './batch'
 import { JOB_FIELDS } from '../templates/jobPost'
 import { matchLocation, type CityPhoto } from '../photos/cities'
@@ -150,5 +150,35 @@ describe('markers can’t reach object internals', () => {
     expect(resolveText('Pay {{constructor}}', {})).toBe('Pay ')
     expect(resolveText('{{toString}}{{__proto__}}', {}, true)).toBe('‹toString›{{__proto__}}') // not a valid key → left as typed
     expect(missingKeys('{{constructor}} {{job}}', { job: 'RN' })).toEqual(['constructor'])
+  })
+})
+
+describe('review fixes (2026-11-18)', () => {
+  it('picks a / an by sound', () => {
+    expect(article('RN – ICU')).toBe('an')
+    expect(article('LPN')).toBe('an')
+    expect(article('MRI Tech')).toBe('an')
+    expect(article('CNA')).toBe('a')
+    expect(article('CT Tech')).toBe('a')
+    expect(article('Occupational Therapist')).toBe('an')
+    expect(article('Ultrasound Tech')).toBe('an')
+    expect(article('Unit Clerk')).toBe('a')
+    expect(article('Pharmacist')).toBe('a')
+  })
+  it('keeps columns lined up when the first cell is blank', () => {
+    const t = '\tTitle\tCity\n1\tRN\tBoise, ID\n'
+    const r = parseJobs(t, JOB_FIELDS)
+    expect(r.jobs[0]).toMatchObject({ job_title: 'RN', location: 'Boise, ID' })
+  })
+  it('never maps bill rates or margins', () => {
+    expect(matchHeader('Bill Rate High', JOB_FIELDS)).toBeNull()
+    expect(matchHeader('Weekly Bill Rate', JOB_FIELDS)).toBeNull()
+    expect(matchHeader('Margin', JOB_FIELDS)).toBeNull()
+    expect(matchHeader('Hourly High', JOB_FIELDS)).toBe('wage_high')
+  })
+  it('fills each field from the first matching column only', () => {
+    const r = parseJobs('Specialty\tProfession\tCity\nICU\tRN\tBoise, ID', JOB_FIELDS)
+    expect(r.mapping).toEqual(['job_title', null, 'location'])
+    expect(r.jobs[0].job_title).toBe('ICU')
   })
 })

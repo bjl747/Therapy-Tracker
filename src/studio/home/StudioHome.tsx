@@ -22,7 +22,7 @@ type Tab = 'create' | 'designs' | 'brand' | 'templates'
 export function StudioHome({ tab }: { tab: Tab }) {
   const nav = useNavigate()
   const { user } = useAuth()
-  const isAdmin = user.role === 'admin'
+  const isAdmin = user?.role === 'admin'
   const tabs: { id: Tab; label: string; to: string }[] = [
     { id: 'create', label: 'Create', to: '/studio' },
     { id: 'designs', label: 'My designs', to: '/studio/designs' },

@@ -18,9 +18,10 @@ if (!DEMO) {
 export const db = (app ? getFirestore(app) : null) as Firestore
 export const auth = (app ? getAuth(app) : null) as Auth
 
+/** same shape as the hub's loadStorage(): the firebase/storage module plus its `storage` instance */
 export async function loadStorage() {
-  const { getStorage } = await import('firebase/storage')
-  return getStorage(app!)
+  const m = await import('firebase/storage')
+  return { ...m, storage: m.getStorage(app!) }
 }
 
 export async function callFunction<Req, Res>(name: string, data: Req): Promise<Res> {
