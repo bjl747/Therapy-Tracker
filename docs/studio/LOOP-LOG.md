@@ -1,0 +1,142 @@
+# Studio — build & critique log
+
+## Next up
+- **City photos** — only 33 of 817 downloaded (Wikimedia blocks this cloud machine). Run
+  `scripts/city-photos/download.py` then `places.py` and `focus.py` from a normal connection
+  (README in that folder). Until then far-away or placeholder photos appear.
+- **From BJ:** original transparent logos (GQR, UnitiMed, BluePipes badge); GQR brand font
+  names (gqr.com blocked automated checks); Hot Jobs field list + Pay Intel hookup; any other
+  sizes/brands the team posts.
+- Colour styles (Light/Bold) for job posts once transparent logos arrive.
+- Hub migration (skill `studio-hub-migration`): wire `firestoreRepo` + rules, test in a dev project.
+- GIF export holds all frames in memory (~186 MB at 1080², 40 frames) — stream to the worker.
+- Mockups for BJ to compare: `docs/studio/mockups/studio-options.html` (Option A is what's built).
+
+## 2026-11-18 — Night 1: rebuild from Canvix
+- Moved Canvix to `legacy/canvix/`; new Vite app on the hub stack with hub shims.
+- Engine: document model with live `{{fields}}` + bound city photos; one Canvas 2D renderer
+  for editor/previews/exports; text shrink-to-fit; own pixel filters; geometry & snapping.
+- Editor store with gesture-based undo, brand locks, pages.
+- Job Kit: one job → square/portrait/story/landscape + GIF + caption; batch paste from
+  spreadsheets; smart field tidying; nearest-city photo with picker.
+- Exporters (agent): PNG/JPG, own GIF encoder (worker), own ZIP, design→PDF.
+- PDF Studio (agent) and canvas editor (agent) in progress.
+- City photos: metadata for all 817 cities collected; downloads throttled by Wikimedia (429),
+  resuming in the background.
+
+### Critique round 1 (ideas)
+- Kept: content-first kit, nearest-city photos, deterministic captions, batch paste, brand locks.
+- Added: healthcare-aware title casing (RN, ICU, L&D…), money/shift/duration tidying, Hot Jobs
+  connector (sample data) + Pay Intel hook type, photo focal points computed at build time
+  (edge-energy centroid with a skyline prior), search-as-you-type over all 32k US places
+  (replaced a 32k-option datalist that would have been slow).
+- Rejected for now: colour "styles" (logos aren't transparent yet), LLM captions (no AI bill).
+
+### Critique round 2 (screenshots: kit, home, brand, PDF at 1440 / 390, light + dark)
+- Fixed: Download-kit bar overlapped previews → sticky bottom bar on all widths.
+- Added: per-size "ready to post" warnings on kit previews (text shrank a lot / doesn't fit / empty field).
+- Found: some Wikipedia city images are collages (e.g. Huntsville) — queued.
+- Found: nearest photo can be far away while the library is incomplete (expected; resolves when
+  downloads finish).
+
+### Critique round 3 (editor landed; full workflow test: kit → download → editor)
+- Editor (Fable agent): canvas + overlay, snapping, rotate/resize, inline text, photo re-framing,
+  panels, lint, preview, exports; 145 tests. Reviewed screenshots at desktop/phone/ultrawide.
+- Kit → ZIP → editor works end to end with no errors (~1.5 s for a whole kit).
+- Fixed: very long titles shrank to 52 % → title boxes now allow two lines (bottom-aligned) in
+  square/portrait/landscape; km vs mi mismatch → miles everywhere; ZIP names were cut at 40 chars.
+- Fixed: animated GIF was 10 MB (moving photo changes every pixel) → 600 px, 12 fps, photo held
+  still in GIFs, 3 s hold on the final frame → ~0.5–0.75 MB.
+
+### Critique round 4 (batch paste with messy data)
+- 3 pasted rows with odd headers ("Position", "City, State", "Weekly Gross"), "Boise ID" without
+  comma, "St. Louis, Missouri", "$2,650 to $2,890", "8 wks" → all tidied correctly.
+- Fixed: Boise got a grey box — Census calls it "Boise City" (alias added), and states with no
+  downloaded photo now borrow the nearest city's photo. Bound photos with no match draw a brand
+  gradient instead of grey, and the kit warns before download.
+
+### Critique round 5 (using the editor like a person)
+- Open a kit design → drag, click text, undo, export PNG via the Download popover — works.
+- Locked brand pieces (badge/logos) start a marquee instead of moving — intended (managers unlock first).
+- Clicking a field-driven text (e.g. location) jumps to that field in the Job details panel — good.
+- Fixed: downloads were saved as "download" — Chrome drops names with non-ASCII (our "—");
+  `safeFileName` now makes names plain ASCII.
+- Fixed: React duplicate-key warning (lock badge listed twice when a locked element was both
+  selected and hovered).
+
+### Critique round 6 (hub-rule audit + ultrawide + dark)
+- Audit vs the hub brief: no spinners (skeletons only) ✓, no page max-width caps ✓, pop-ups portal
+  + Esc closes top ✓, React-only handlers ✓. Fixed: photo-credit link now goes through `safeUrl`.
+- 3440×1440 dark: kit previews were tiny with lots of empty space → grid auto-fits and previews
+  scale with the window height.
+- Story: the GQR logo sat on the photo in a navy box (placeholder logo has navy baked in) → now a
+  deliberate rounded navy tile with a soft shadow.
+- City photos: Wikimedia keeps rate-limiting this cloud machine (HTTP 429). Downloader slowed to be
+  polite (4 s between files, 5–10 min back-off). Faster option for BJ: run
+  `scripts/city-photos/download.py` from a normal office/home connection (see that README).
+
+### Critique round 7 (new magic: Hot Jobs roundup)
+- Argued: recruiters post weekly "hot jobs" lists; Canva makes that a tedious copy-paste job.
+- Added `showIf` to the model (element only draws when a field has a value) and a
+  "Hot Jobs Roundup" template (square + story, up to 5 rows, staggered slide-in animation).
+- Job Kit → Many jobs → **Roundup post** builds it from the pasted rows in one click.
+- Fixed: the home page "Templates" thumbnails always opened the first template.
+- Fixed: linter/kit warnings flagged switched-off roundup rows.
+
+### Critique round 8 (PDF tools like a person)
+- Added 2 PDFs + a PNG → 7 pages; select all, rotate; Download PDF → 7 pages, rotations correct
+  (verified by re-opening the file with pdf-lib). Landscape pages letterbox in portrait slots (fine).
+
+### Critique round 9 (accessibility)
+- Every visible button/input on home, kit (one + many), PDF and brand has an accessible name.
+
+### Critique round 10 (final human workflow — "Monday, 6 jobs to post")
+- Friction: posting meant Copy image → open LinkedIn → paste → back → Copy caption → paste.
+  Added **Post on LinkedIn**: copies the image, opens LinkedIn with the caption already typed —
+  the recruiter presses Ctrl+V and Post. (Copy happens first: browsers only allow clipboard writes
+  while our tab has focus.) Button lives in the always-visible bottom bar.
+- Friction: last week's jobs were gone unless saved as designs → **Recent jobs** chips (last 10,
+  per browser) at the top of the job form.
+- Compared with today's Canva flow (duplicate last post, retype 9 fields, find a photo, export,
+  upload, write caption): Studio is one form (or one Hot Job click / one paste for many), every size
+  + GIF + caption at once, photo chosen automatically, and one click to LinkedIn.
+
+### BJ feedback — template-locked fields
+- Job type, benefits line, call to action and website are fixed by the template and must not be
+  changed by recruiters. Implemented end to end (FieldDef `locked`, locked text elements, hidden
+  from the kit form with a "Set by the template" summary, ignored in paste/Hot Jobs, forced in
+  `instantiate`, refused by the editor store for non-managers) + tests.
+- City photos: 25 collage images swapped for single photos (`fix_montages.py`); `meta.json`
+  shipped so the download can be finished from any normal connection.
+
+### BJ feedback — admins own templates
+- Admin-only **Templates** tab: locked values ("settings") for everyone, field editor (label,
+  default, type, group, lock/unlock, order, add/remove), sizes (add/remove, default), **Edit
+  design** opens the editor in template mode with a "Save to template" bar, new template (blank or
+  copy), duplicate, delete with undo, reset built-ins to original.
+- Job Kit and home read the live library (template picker appears when there's more than one).
+- Only admins can move/edit brand-locked pieces and locked fields; brand uploads are admin-only.
+- Demo sidebar "View as" role switch to preview recruiter vs. admin.
+- Bug caught by the e2e test and fixed: Job Kit re-render loop (template objects rebuilt each
+  render) → memoised library + stable effect deps.
+
+### Round 11 — independent bug review (fresh agent, not anchored on my reviews)
+15 findings, all fixed and re-verified with the 6 workflow scripts + 242 unit tests:
+- HIGH: typing `{{constructor}}` crashed the editor and the autosaved design could never reopen →
+  own-property field lookup (`fieldValue`) + a Studio error boundary with "Back to Studio".
+- GIF/Preview ended with late-animated elements invisible → final frame drawn in its finished
+  state; play length covers the latest animation; delay slider clamped.
+- Invisible roundup rows were clickable/deletable → shared `isDrawn()` used by hit-test, marquee,
+  snapping, select-all, lint; Layers shows "shown when Job 4 is filled".
+- Undo mid-drag corrupted history; autosave stalled while typing in a field ("Saving…" lied) →
+  gesture kinds (pointer vs. edit), truthful "Unsaved changes / Saving… / Saved".
+- SVG logo uploads failed and silently stopped the batch → `<img>` decode fallback, SVG → PNG,
+  per-file error toasts.
+- GIF worker fallback re-encoded detached buffers → worker "ready" handshake before transfer.
+- Blur missing in Safari → our own pixel blur (3-pass box ≈ Gaussian).
+- Safari "Copy image" → ClipboardItem with a promise created inside the click (editor + kit).
+- Failed image/city loads stuck for the session → time-boxed retries; exports warn when a photo
+  couldn't load.
+- "St Paul"/"Ft Worth"/"Mt Vernon" without dots, long words mid-line not wrapping, location box
+  overwriting "Clear all"/Recent picks, LinkedIn false "allow pop-ups", PDF object-URL leak,
+  editor exports not waiting for fonts, double-click making two kits.
