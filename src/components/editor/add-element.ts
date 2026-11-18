@@ -296,7 +296,12 @@ export async function downscaleForEmbed(src: string, maxEdge = 2048): Promise<{ 
   return { src: out, width: w, height: h }
 }
 
-export function addImageFromSrc(src: string, naturalWidth: number, naturalHeight: number) {
+export function addImageFromSrc(
+  src: string,
+  naturalWidth: number,
+  naturalHeight: number,
+  credit?: { provider: string; author: string; license: string; url: string },
+) {
   const state = useEditorStore.getState()
   const maxW = state.width * 0.7
   const maxH = state.height * 0.7
@@ -309,6 +314,7 @@ export function addImageFromSrc(src: string, naturalWidth: number, naturalHeight
       ...pos,
       width: w,
       height: h,
+      ...(credit ? { credit } : {}),
     })
   )
 }

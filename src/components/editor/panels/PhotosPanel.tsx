@@ -61,7 +61,46 @@ const CATEGORIES = [
   { id: 'travel', label: 'Travel' },
   { id: 'texture', label: 'Textures' },
   { id: 'abstract', label: 'Abstract' },
+  { id: 'cities', label: 'US Cities' },
 ]
+
+/** a bundled US-city photo (public/photos/cities/index.json) — sourced
+ *  from Wikimedia Commons under free licences; the credit block rides
+ *  on the inserted element exactly like a Pexels/Pixabay result. */
+interface CityPhoto {
+  id: string
+  city: string
+  state: string
+  st: string
+  population: number
+  width: number
+  height: number
+  credit: { provider: string; author: string; license: string; url: string }
+}
+
+let cityCache: Promise<CityPhoto[]> | null = null
+function loadCityPhotos(): Promise<CityPhoto[]> {
+  cityCache ??= fetch('/photos/cities/index.json')
+    .then((r) => (r.ok ? r.json() : []))
+    .then((d) => (Array.isArray(d) ? (d as CityPhoto[]) : []))
+    .catch(() => {
+      cityCache = null
+      return []
+    })
+  return cityCache
+}
+
+function matchCity(p: CityPhoto, q: string): boolean {
+  if (!q) return true
+  const hay = `${p.city} ${p.state}`.toLowerCase()
+  const words = hay.split(/\s+/)
+  const st = p.st.toLowerCase()
+  // every word must match: "austin tx", "portland oregon", "springfield"
+  return q
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .every((w) => (w.length <= 2 ? st === w || words.some((x) => x.startsWith(w)) : hay.includes(w)))
+}
 
 const TAGS: Record<string, string[]> = {
   nature: ['mountain', 'landscape', 'forest', 'lake', 'sunset', 'outdoor', 'green', 'mist'],
@@ -98,6 +137,25 @@ export function PhotosPanel() {
   const [busyTile, setBusyTile] = useState<string | null>(null)
   const [provider, setProvider] = useState('')
   const lastQuery = useRef('')
+
+  // US city library — loaded on first need (tab open or a search)
+  const [cityPhotos, setCityPhotos] = useState<CityPhoto[]>([])
+  const wantCities = cat === 'cities' || query.trim().length >= 2
+  useEffect(() => {
+    if (!wantCities || cityPhotos.length) return
+    let live = true
+    void loadCityPhotos().then((d) => live && setCityPhotos(d))
+    return () => {
+      live = false
+    }
+  }, [wantCities, cityPhotos.length])
+
+  const cities = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (cat !== 'cities' && q.length < 2) return []
+    if (cat !== 'cities' && cat !== 'all') return []
+    return cityPhotos.filter((p) => matchCity(p, q))
+  }, [cat, query, cityPhotos])
 
   // default connector = the first configured one
   const activeProvider = provider || providers[0] || ''
@@ -161,6 +219,7 @@ export function PhotosPanel() {
     const q = query.trim().toLowerCase()
     return PHOTOS.filter((p) => {
       if (hidden[p.file]) return false
+      if (cat === 'cities') return false
       if (cat !== 'all' && p.cat !== cat) return false
       if (!q) return true
       const label = CATEGORIES.find((c) => c.id === p.cat)?.label ?? p.cat
@@ -172,6 +231,14 @@ export function PhotosPanel() {
     // bundled photos are 900 × ~514 (1344×768 originals downscaled)
     addImageFromSrc(p.file, 900, 514)
     toast({ title: 'Photo added' })
+  }
+
+  const addCity = (p: CityPhoto) => {
+    addImageFromSrc(`/photos/cities/${p.id}.jpg`, p.width, p.height, p.credit)
+    toast({
+      title: `${p.city}, ${p.st} added`,
+      description: `${p.credit.provider} · ${p.credit.author} — ${p.credit.license}`,
+    })
   }
 
   const addStock = async (tile: StockPhotoTile) => {
@@ -236,7 +303,7 @@ export function PhotosPanel() {
     <PanelShell
       title="Photos"
       subtitle="Search millions of stock photos or browse the free library"
-      searchPlaceholder="Search photos (e.g. mountain, coffee, beach)"
+      searchPlaceholder="Search photos (e.g. mountain, beach, Denver)"
       searchValue={query}
       onSearchValueChange={setQuery}
       onSearch={setQuery}
@@ -331,6 +398,45 @@ export function PhotosPanel() {
         </div>
       )}
 
+      {/* ── US city library (Wikimedia Commons, bundled) ── */}
+      {cities.length > 0 && (
+        <div className="mb-4">
+          {cat !== 'cities' && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[10.5px] font-bold text-white/55 uppercase tracking-wide">
+                US cities ({cities.length})
+              </span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2.5">
+            {cities.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => addCity(p)}
+                className="group relative aspect-[7/5] rounded-xl overflow-hidden border border-white/10 hover:border-[#7630D7] transition-colors bg-[#0F1015]"
+                aria-label={`Add photo of ${p.city}, ${p.state}`}
+                title={`${p.city}, ${p.state} — ${p.credit.author} (${p.credit.license})`}
+              >
+                <img
+                  src={`/photos/cities/thumbs/${p.id}.jpg`}
+                  alt={`${p.city}, ${p.state}`}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover group-hover:scale-[1.04] transition-transform duration-300"
+                />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 pb-1.5 pt-5 text-left text-[11px] font-semibold text-white leading-tight">
+                  {p.city}, {p.st}
+                </span>
+                <span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/25">
+                  <span className="h-8 px-3 rounded-full bg-[#7630D7] text-white text-[11.5px] font-bold flex items-center gap-1.5 shadow-lg">
+                    <Plus size={12} /> Add
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── bundled library ── */}
       {photos.length > 0 && (
         <div className="grid grid-cols-2 gap-2.5">
@@ -362,7 +468,7 @@ export function PhotosPanel() {
         </div>
       )}
 
-      {photos.length === 0 && !showWeb && (
+      {photos.length === 0 && cities.length === 0 && !showWeb && (
         <div className="py-16 text-center">
           <ImageDown size={28} className="mx-auto text-white/25 mb-3" />
           <p className="text-[13px] text-white/50 font-medium">No photos match “{query}”</p>
@@ -374,7 +480,8 @@ export function PhotosPanel() {
         Stock photos come from {providers.length > 0 ? providers.map(providerLabel).join(' and ') : 'the configured provider'} under
         their free licenses (Pexels License / Pixabay Content License) — inserted photos are downloaded
         into your media library and attribution stays on the element. Bundled photos are AI-generated
-        for Canvix.
+        for Canvix. US city photos come from Wikimedia Commons under free licences (credit shown on
+        the element).
       </p>
     </PanelShell>
   )
