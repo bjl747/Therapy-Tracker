@@ -296,7 +296,7 @@ export function JobKit() {
                 <Film size={12} /> Animated GIF
               </button>
             </div>
-            <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))]">
+            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
               {sizes.map((s) => (
                 <PreviewCard
                   key={s}
@@ -433,8 +433,8 @@ function PreviewCard({
   }, [])
   const tick = useAssetTick()
   const warnings = useMemo(() => kitWarnings(design), [design, tick]) // eslint-disable-line react-hooks/exhaustive-deps
-  // tall formats shouldn't dominate the grid
-  const maxH = 520
+  // tall formats shouldn't dominate the grid; big screens get big previews
+  const maxH = Math.max(420, Math.min(900, (typeof window !== 'undefined' ? window.innerHeight : 900) - 300))
   const width = Math.min(w, (maxH * design.w) / design.h)
   return (
     <div className="card p-3 min-w-0 flex flex-col">

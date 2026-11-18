@@ -190,6 +190,9 @@ function story(): TemplateLayout {
             x: 0, y: 560, w: W, h: 440, fill: BRAND.navy, name: 'Photo fade',
             gradient: { type: 'linear', angle: 180, stops: [{ at: 0, color: 'rgba(12,24,77,0)' }, { at: 1, color: BRAND.navy }] },
           }),
+          // navy tile behind the logo (the placeholder logo has navy baked in; also
+          // keeps a transparent logo readable over any photo)
+          rect(48, 232, 340, 140, BRAND.navy, 22, { name: 'Logo tile', locked: true, anim: anim('fade', 0.2), shadow: { color: 'rgba(0,0,0,0.25)', blur: 24, x: 0, y: 6 } }),
           logo(LOGOS.gqr, 72, 250, 0.9, 'GQR logo', anim('fade', 0.2)),
           ...pill(72, 640, 300, 70, 28, 0.6),
           T({ x: 72, y: 740, w: 936, h: 200, text: '{{job_title}}', name: 'Job title', style: { size: 96, weight: 800, lineHeight: 1.05, valign: 'bottom' }, anim: anim('rise', 0.8) }),

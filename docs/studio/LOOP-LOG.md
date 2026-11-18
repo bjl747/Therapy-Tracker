@@ -61,3 +61,14 @@
   `safeFileName` now makes names plain ASCII.
 - Fixed: React duplicate-key warning (lock badge listed twice when a locked element was both
   selected and hovered).
+
+### Critique round 6 (hub-rule audit + ultrawide + dark)
+- Audit vs the hub brief: no spinners (skeletons only) ✓, no page max-width caps ✓, pop-ups portal
+  + Esc closes top ✓, React-only handlers ✓. Fixed: photo-credit link now goes through `safeUrl`.
+- 3440×1440 dark: kit previews were tiny with lots of empty space → grid auto-fits and previews
+  scale with the window height.
+- Story: the GQR logo sat on the photo in a navy box (placeholder logo has navy baked in) → now a
+  deliberate rounded navy tile with a soft shadow.
+- City photos: Wikimedia keeps rate-limiting this cloud machine (HTTP 429). Downloader slowed to be
+  polite (4 s between files, 5–10 min back-off). Faster option for BJ: run
+  `scripts/city-photos/download.py` from a normal office/home connection (see that README).

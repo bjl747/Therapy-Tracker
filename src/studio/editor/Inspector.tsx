@@ -2,6 +2,7 @@
 // through the store, so sliders / scrubs are single undo steps and brand
 // locks are enforced in one place.
 
+import { safeUrl } from '@/lib/sanitize'
 import { useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -542,10 +543,14 @@ function ImageSection({ els, patchAll }: { els: ImageEl[]; patchAll: (fn: (e: El
         <Section title="Photo credit">
           <div className="text-[12px] leading-relaxed text-ink-2">
             {credit.author} · {credit.license}
-            <br />
-            <a href={credit.url} target="_blank" rel="noreferrer noopener" className="font-semibold text-accent hover:underline">
-              View on {credit.provider}
-            </a>
+            {safeUrl(credit.url) && (
+              <>
+                <br />
+                <a href={safeUrl(credit.url)!} target="_blank" rel="noreferrer noopener" className="font-semibold text-accent hover:underline">
+                  View on {credit.provider}
+                </a>
+              </>
+            )}
           </div>
         </Section>
       )}

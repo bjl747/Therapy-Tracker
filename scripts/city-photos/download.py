@@ -17,11 +17,11 @@ def fetch(url):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=40) as r:
                 data = r.read()
-            time.sleep(2.0)
+            time.sleep(4.0)
             return data
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504):
-                wait = min(60, int(e.headers.get("Retry-After") or 20) + 3)
+                wait = min(600, max(300, int(e.headers.get("Retry-After") or 300)))
                 print("  wait", e.code, wait, flush=True)
                 time.sleep(wait)
                 continue
