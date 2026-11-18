@@ -105,6 +105,9 @@ export function handlePositions(f: Frame, v: View, ids: HandleId[]): HandlePos[]
   })
 }
 
+/** a side needs this many screen px before it gets a mid-edge handle */
+export const EDGE_MIN = 22
+
 /** which handles a frame shows, given its on-screen size */
 export function handlesFor(f: Frame, v: View, kind: 'box' | 'line' | 'multi'): HandleId[] {
   if (kind === 'line') return ['w', 'e', 'rot']
@@ -112,8 +115,8 @@ export function handlesFor(f: Frame, v: View, kind: 'box' | 'line' | 'multi'): H
   const sh = f.h * v.zoom
   const ids: HandleId[] = ['nw', 'ne', 'se', 'sw']
   if (kind === 'box') {
-    if (sw >= 44) ids.push('n', 's')
-    if (sh >= 44) ids.push('e', 'w')
+    if (sw >= EDGE_MIN) ids.push('n', 's')
+    if (sh >= EDGE_MIN) ids.push('e', 'w')
   }
   ids.push('rot')
   return ids

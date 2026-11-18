@@ -272,12 +272,12 @@ function ExportPanel({ close }: { close: () => void }) {
   const [job, setJob] = useState<Job>(null)
   const [error, setError] = useState<string | null>(null)
   const alive = useRef(true)
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true
+    return () => {
       alive.current = false
-    },
-    [],
-  )
+    }
+  }, [])
   const page = design.pages[pageIndex]
   const many = design.pages.length > 1
   const canGif = !!page && (designHasAnimation(page) || many)

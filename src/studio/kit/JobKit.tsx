@@ -46,6 +46,15 @@ function saveDraft(f: Record<string, string>) {
 }
 
 const KIT_SIZES = ['square', 'portrait', 'story', 'landscape'] as const
+/** social sites cap GIFs (LinkedIn ~5 MB); 600px @ 12fps keeps a 5s post well under */
+const GIF_SCALE = 600 / 1080
+const GIF_FPS = 12
+
+/** GIFs: keep the photo still (a moving photo changes every pixel of every
+ *  frame and balloons the file); entrances still animate */
+function forGif(d: Design): Design {
+  return { ...d, pages: d.pages.map((p) => ({ ...p, elements: p.elements.map((e) => (e.type === 'image' ? { ...e, kenBurns: false } : e)) })) }
+}
 
 /** render + encode everything for one job (shared by single + batch) */
 async function buildKitFiles(
@@ -66,14 +75,14 @@ async function buildKitFiles(
     files.push({ name: `${prefix}${size}.png`, data: await exportPng(d, 0, { scale: 1, resolveImage }) })
     if (gif && size === 'square') {
       onStep?.('Animated GIF')
-      files.push({ name: `${prefix}${size}-animated.gif`, data: await exportGif(d, 0, { scale: 0.75, fps: 15, resolveImage }) })
+      files.push({ name: `${prefix}${size}-animated.gif`, data: await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }) })
     }
   }
   files.push({ name: `${prefix}caption.txt`, data: new TextEncoder().encode(caption(fields)) })
   return files
 }
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'job'
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 72).replace(/-+$/, '') || 'job'
 
 export function JobKit() {
   const nav = useNavigate()
@@ -145,7 +154,7 @@ export function JobKit() {
       const name = slug(`${fields.job_title}-${fields.location}-${size}`)
       if (kind === 'gif') {
         const { exportGif } = await import('../export/animate')
-        downloadBlob(await exportGif(d, 0, { scale: 0.75, fps: 15, resolveImage }), `${name}.gif`)
+        downloadBlob(await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }), `${name}.gif`)
       } else downloadBlob(await exportPng(d, 0, { scale: 1, resolveImage }), `${name}.png`)
     } finally {
       setBusy(null)
@@ -496,7 +505,7 @@ function LocationHint({
     : match?.kind === 'exact'
       ? 'exact match'
       : match?.kind === 'nearby'
-        ? `nearest photo · ${match.distanceKm} km`
+        ? `nearest photo · ${Math.round((match.distanceKm ?? 0) * 0.621)} mi`
         : 'largest city in the state'
   return (
     <span className="flex items-center gap-2 mt-1.5 min-w-0">

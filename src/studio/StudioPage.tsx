@@ -13,14 +13,7 @@ import { StudioHome } from './home/StudioHome'
 import { JobKit } from './kit/JobKit'
 import { Toaster } from './ui/toast'
 
-// TEMP until the editor lands
-const mods = import.meta.glob('./editor/Editor.tsx')
-const Editor = lazy(async () => {
-  const load = mods['./editor/Editor.tsx']
-  if (!load) return { default: (() => <div className="p-6">Editor coming…</div>) as unknown as React.ComponentType<{ designId: string; onExit: () => void; canEditLocked?: boolean; readOnly?: boolean }> }
-  const m = (await load()) as { Editor: React.ComponentType<{ designId: string; onExit: () => void; canEditLocked?: boolean; readOnly?: boolean }> }
-  return { default: m.Editor }
-})
+const Editor = lazy(() => import('./editor/Editor').then((m) => ({ default: m.Editor })))
 const PdfStudio = lazy(() => import('./pdf/PdfStudio').then((m) => ({ default: m.PdfStudio })))
 
 function Skeleton() {

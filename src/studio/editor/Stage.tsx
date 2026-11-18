@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { flushSync } from 'react-dom'
 import clsx from 'clsx'
 import { Copy, Crop, Lock, MoreHorizontal, Pencil, RotateCw, Trash2, Unlock } from 'lucide-react'
 import { cloneEl, uid, type Design, type El, type ImageEl, type TextEl } from '../engine/model'
@@ -134,7 +135,7 @@ export function Stage({ compact }: { compact: boolean }) {
 
   const page = design.pages[Math.min(pageIndex, design.pages.length - 1)]
   const view: View = useMemo(
-    () => (zoom === null ? fitView(design, size, compact ? 14 : 48) : { zoom, x: pan.x, y: pan.y }),
+    () => (zoom === null ? fitView(design, size, compact ? 14 : 32) : { zoom, x: pan.x, y: pan.y }),
     [zoom, pan, design.w, design.h, size, compact], // eslint-disable-line react-hooks/exhaustive-deps
   )
   const viewRef = useRef(view)
@@ -281,8 +282,10 @@ export function Stage({ compact }: { compact: boolean }) {
     if (!pg || !st.design) return
     const hitEl_ = cur.hit ? pg.elements.find((e) => e.id === cur.hit) : null
     const additive = cur.mods.shift || cur.mods.meta
-    if (hitEl_ && !additive && !st.readOnly && !hitEl_.locked) {
-      let els = selectedEls(st).filter((e) => !e.locked)
+    if (hitEl_ && !st.readOnly && !hitEl_.locked) {
+      // Shift/Cmd-drag on an unselected element adds it, then moves everything (Shift also constrains the axis)
+      if (!cur.hitSelected && additive) st.select([hitEl_.id], 'add')
+      let els = selectedEls(useEditor.getState()).filter((e) => !e.locked)
       if (els.length) {
         st.beginGesture()
         useUi.getState().setGesturing(true)
@@ -509,8 +512,10 @@ export function Stage({ compact }: { compact: boolean }) {
     }
   }
 
+  // flushSync: the React commit (overlay) and the canvas draw happen inside
+  // this animation frame, so what you see is never a frame behind the pointer
   const queue = () => {
-    if (!raf.current) raf.current = requestAnimationFrame(process)
+    if (!raf.current) raf.current = requestAnimationFrame(() => flushSync(process))
   }
   const flush = () => {
     if (raf.current) {
@@ -674,6 +679,7 @@ export function Stage({ compact }: { compact: boolean }) {
     }
     if (cur.mods.shift || cur.mods.meta) {
       st.select([cur.hit], 'toggle')
+      lastClick.current = null // a toggle is never the first half of a double-click
       return
     }
     if (dbl) {
@@ -917,12 +923,13 @@ export function Stage({ compact }: { compact: boolean }) {
             }
             if (h.id.length === 2) return <circle key={h.id} cx={h.x} cy={h.y} r={5} fill="#fff" stroke={accent} strokeWidth={1.5} />
             const vertical = h.id === 'e' || h.id === 'w'
+            const len = Math.max(6, Math.min(14, (vertical ? frame.h : frame.w) * z * 0.36))
             return (
               <rect
                 key={h.id}
-                x={-7}
+                x={-len / 2}
                 y={-3}
-                width={14}
+                width={len}
                 height={6}
                 rx={3}
                 fill="#fff"
@@ -1061,45 +1068,57 @@ function TextEditor({ el, view }: { el: TextEl; view: View }) {
   }
 
   return (
-    <textarea
-      ref={ref}
+    <div
       data-stage-ui
-      aria-label="Edit text"
-      spellCheck={false}
-      value={el.text}
-      onChange={(e) => useEditor.getState().updateEl(el.id, { text: e.target.value } as Partial<El>, { transient: true })}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
-          e.preventDefault()
-          commit()
-        }
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="absolute m-0 resize-none overflow-hidden border-0 bg-transparent p-0 outline-none"
+      className="absolute"
       style={{
         left: c.x,
         top: c.y,
         width: el.w,
         height: el.h,
-        paddingTop: Math.max(0, top),
         transform: `translate(-50%, -50%) rotate(${el.rotation}deg) scale(${view.zoom})`,
-        font: fontString(el.style, l.size),
-        lineHeight: `${l.lineHeight}px`,
-        letterSpacing: `${ls}px`,
-        textAlign: el.style.align,
-        textTransform: el.style.upper ? 'uppercase' : 'none',
-        textDecoration: el.style.underline ? 'underline' : 'none',
-        color: el.color,
-        caretColor: el.color,
-        boxShadow: `0 0 0 ${1.5 / view.zoom}px rgb(var(--accent))`,
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'break-word',
-        cursor: 'text',
         opacity: el.opacity,
+        boxShadow: `0 0 0 ${1.5 / view.zoom}px rgb(var(--accent))`,
       }}
-    />
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {el.bg && (
+        <div
+          className="pointer-events-none absolute"
+          style={{ left: -el.bg.padX, top: -el.bg.padY, right: -el.bg.padX, bottom: -el.bg.padY, background: el.bg.color, borderRadius: Math.min(el.bg.radius, (el.h + el.bg.padY * 2) / 2) }}
+        />
+      )}
+      <textarea
+        ref={ref}
+        aria-label="Edit text"
+        spellCheck={false}
+        value={el.text}
+        onChange={(e) => useEditor.getState().updateEl(el.id, { text: e.target.value } as Partial<El>, { transient: true })}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
+            e.preventDefault()
+            commit()
+          }
+        }}
+        className="absolute inset-0 m-0 block h-full w-full resize-none overflow-hidden border-0 bg-transparent p-0 outline-none"
+        style={{
+          paddingTop: Math.max(0, top),
+          font: fontString(el.style, l.size),
+          lineHeight: `${l.lineHeight}px`,
+          letterSpacing: `${ls}px`,
+          textAlign: el.style.align,
+          textTransform: el.style.upper ? 'uppercase' : 'none',
+          textDecoration: el.style.underline ? 'underline' : 'none',
+          color: el.color,
+          caretColor: el.color,
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'break-word',
+          cursor: 'text',
+        }}
+      />
+    </div>
   )
 }
 
