@@ -29,6 +29,7 @@ import { useToast } from '../ui/toast'
 import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
+import { PayCalc } from './PayCalc'
 import { kitWarnings } from './warnings'
 
 const DRAFT_KEY = 'studio.kit.draft'
@@ -357,6 +358,8 @@ export function JobKit() {
               <fieldset key={g} className="mb-3">
                 <legend className="text-[11px] font-bold text-ink-2 mb-1.5">{g}</legend>
                 <div className="grid grid-cols-2 gap-2">
+                  {/* the hub's pay calculator, above the pay fields it fills (hidden without the hub) */}
+                  {defs.some((f) => f.key === 'weekly_pay') && <PayCalc fields={fields} setFields={setFields} />}
                   {defs.map((f) => (
                     <label
                       key={f.key}

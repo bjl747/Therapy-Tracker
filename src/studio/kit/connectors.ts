@@ -31,6 +31,34 @@ export interface JobSource {
 /** Pay Intel hook: given a job, return pay fields (weekly range + hourly range) */
 export type PayEstimator = (job: HotJob) => Promise<Partial<Record<'weekly_pay' | 'wage_low' | 'wage_high', string>>>
 
+/** A fresh job's numbers for the Job Kit's "Work out pay" strip (BJ, 2026-11-18). */
+export interface PayQuote {
+  billRate: number
+  vendorId: string
+  city: string
+  state: string
+  zip?: string
+  hours?: number
+  weeks?: number
+  /** the post's start date text ("ASAP", "12/7", "Jan 12") */
+  start?: string
+}
+export type PayAnswer =
+  | { ok: true; weekly: [number, number]; hourly: [number, number]; note: string }
+  | { ok: false; reason: string }
+/** The hub's pay calculator (the Deal Sheet with the hub's margin rules) and Deal Key's vendor list. Without it (this
+ *  standalone repo) the Job Kit hides the strip and pay is typed in. */
+export interface PayTools {
+  vendors(): Promise<{ id: string; name: string; fee: string }[]>
+  estimate(q: PayQuote): Promise<PayAnswer>
+  defaults: { hours: number; weeks: number }
+}
+let payTools: PayTools | null = null
+export const setPayTools = (t: PayTools | null) => {
+  payTools = t
+}
+export const getPayTools = () => payTools
+
 export function hotJobToFields(j: HotJob): Record<string, string> {
   const out: Record<string, string> = {
     job_title: formatTitle(j.title),
