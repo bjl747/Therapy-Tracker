@@ -19,7 +19,9 @@ const ALIASES: Record<string, string[]> = {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-export function matchHeader(header: string, fields: FieldDef[]): string | null {
+export function matchHeader(header: string, allFields: FieldDef[]): string | null {
+  // template-locked fields (job type, benefits, footer) can't come from a paste
+  const fields = allFields.filter((f) => !f.locked)
   const h = norm(header)
   if (!h) return null
   for (const f of fields) if (norm(f.key) === h || norm(f.label) === h) return f.key

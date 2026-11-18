@@ -12,6 +12,12 @@ Register built-ins in `src/studio/templates/index.ts`.
 ## Rules
 - **Fields**: `{ key, label, example, kind?, group? }`. `kind: 'location'` drives the city
   photo; `money` gets money formatting in the Job Kit (`kit/normalize.ts → tidyField`).
+- **Locked fields** (BJ's rule): anything fixed by the template — job type, benefits line, call to
+  action, website — gets `locked: true` on the FieldDef AND on the text element that shows it.
+  Recruiters never see them in the Job Kit form (a "Set by the template" box shows the values),
+  pasted spreadsheet columns can't map onto them, Hot Jobs can't override them, `instantiate()`
+  always uses the template value, and the editor store refuses `setFields` for them unless the
+  user is a manager. Change the value by editing the template's `example`.
 - **Text** uses `{{key}}` markers. Use `fit: 'shrink'` (default) for anything variable so long
   titles never overflow; `fit: 'fixed'` for static labels.
 - **City photo**: `image({ bind: 'location', kenBurns: true, ... })`. Users can pin another

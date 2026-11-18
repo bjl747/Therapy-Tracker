@@ -325,8 +325,12 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     setFields: (patch) => {
-      const d = get().design
-      if (d) commit({ ...d, fields: { ...d.fields, ...patch }, updatedAt: Date.now() })
+      const { design: d, canEditLocked } = get()
+      if (!d) return
+      const locked = new Set((d.fieldDefs ?? []).filter((f) => f.locked).map((f) => f.key))
+      const allowed = canEditLocked ? patch : Object.fromEntries(Object.entries(patch).filter(([k]) => !locked.has(k)))
+      if (!Object.keys(allowed).length) return
+      commit({ ...d, fields: { ...d.fields, ...allowed }, updatedAt: Date.now() })
     },
     rename: (name) => {
       const d = get().design

@@ -102,3 +102,30 @@ describe('locations', () => {
     expect(st?.photo.id).toBe('virginia-beach-va')
   })
 })
+
+import { instantiate } from '../templates/instantiate'
+import { TRAVEL_JOB_POST } from '../templates/jobPost'
+import { useEditor } from '../editor/store'
+
+describe('template-locked fields', () => {
+  it('instantiate ignores typed values for locked fields', () => {
+    const d = instantiate(TRAVEL_JOB_POST, 'square', { job_type: 'NURSE TRAVEL', website: 'evil.example', job_title: 'RN' })
+    expect(d.fields.job_type).toBe('ALLIED TRAVEL')
+    expect(d.fields.website).toBe('unitimed.com')
+    expect(d.fields.job_title).toBe('RN')
+  })
+  it('pasted columns never map onto locked fields', () => {
+    const r = parseJobs('Title\tJob Type\tBenefits\tWebsite\nRN\tNurse\tPTO\tx.com', JOB_FIELDS)
+    expect(r.jobs).toEqual([{ job_title: 'RN' }])
+  })
+  it('recruiters cannot change locked fields in the editor; managers can', () => {
+    const d = instantiate(TRAVEL_JOB_POST, 'square')
+    useEditor.getState().load(d, { canEditLocked: false })
+    useEditor.getState().setFields({ cta: 'CALL NOW', job_title: 'PT' })
+    expect(useEditor.getState().design!.fields.cta).toBe('APPLY TODAY')
+    expect(useEditor.getState().design!.fields.job_title).toBe('PT')
+    useEditor.getState().load(d, { canEditLocked: true })
+    useEditor.getState().setFields({ cta: 'CALL NOW' })
+    expect(useEditor.getState().design!.fields.cta).toBe('CALL NOW')
+  })
+})

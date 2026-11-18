@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowLeft, ListChecks, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, ListChecks, Lock, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
@@ -100,7 +100,8 @@ async function buildKitFiles(
       files.push({ name: `${prefix}${size}-animated.gif`, data: await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }) })
     }
   }
-  files.push({ name: `${prefix}caption.txt`, data: new TextEncoder().encode(caption(fields)) })
+  // caption uses the template's locked values (job type, website…)
+  files.push({ name: `${prefix}caption.txt`, data: new TextEncoder().encode(caption(instantiate(t, t.defaultSize, fields).fields)) })
   return files
 }
 
@@ -129,11 +130,17 @@ export function JobKit() {
     return () => clearTimeout(t)
   }, [fields])
 
+  // locked template values always win over anything stored in drafts/recent jobs
+  const effective = useMemo(
+    () => ({ ...fields, ...Object.fromEntries(template.fieldDefs.filter((f) => f.locked).map((f) => [f.key, f.example])) }),
+    [fields, template],
+  )
+
   const designs = useMemo(
     () => Object.fromEntries(KIT_SIZES.map((s) => [s, instantiate(template, s, fields)])) as Record<string, Design>,
     [template, fields],
   )
-  const text = useMemo(() => caption(fields, variant), [fields, variant])
+  const text = useMemo(() => caption(effective, variant), [effective, variant])
   const match = fields.location ? resolveLocation(fields.location) : null
   const pinned = fields['location__photo'] ? cityIndex().find((c) => c.id === fields['location__photo']) : undefined
 
@@ -226,7 +233,8 @@ export function JobKit() {
 
   const groups = useMemo(() => {
     const g = new Map<string, FieldDef[]>()
-    for (const f of template.fieldDefs) g.set(f.group ?? 'Details', [...(g.get(f.group ?? 'Details') ?? []), f])
+    // template-locked fields (job type, benefits, footer) aren't editable here
+    for (const f of template.fieldDefs.filter((x) => !x.locked)) g.set(f.group ?? 'Details', [...(g.get(f.group ?? 'Details') ?? []), f])
     return [...g.entries()]
   }, [template])
 
@@ -280,7 +288,7 @@ export function JobKit() {
               <div className="eyebrow">Job details</div>
               <button
                 className="text-[11.5px] font-semibold text-ink-3 hover:text-accent whitespace-nowrap"
-                onClick={() => setFields(Object.fromEntries(template.fieldDefs.map((f) => [f.key, ''])))}
+                onClick={() => setFields(Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.locked ? f.example : ''])))}
               >
                 Clear all
               </button>
@@ -325,6 +333,7 @@ export function JobKit() {
                 </div>
               </fieldset>
             ))}
+            <LockedSummary defs={template.fieldDefs} />
           </section>
 
           {/* ── previews ── */}
@@ -429,6 +438,28 @@ export function JobKit() {
 }
 
 // ── pieces ──────────────────────────────────────────────────
+
+function LockedSummary({ defs }: { defs: FieldDef[] }) {
+  const locked = defs.filter((f) => f.locked)
+  if (!locked.length) return null
+  return (
+    <div className="mt-1 rounded-xl bg-surface-2/70 border border-line px-3 py-2.5">
+      <div className="text-[11px] font-bold text-ink-2 mb-1 flex items-center gap-1">
+        <Lock size={11} /> Set by the template
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[11.5px]">
+        {locked.map((f) => (
+          <div key={f.key} className="contents">
+            <dt className="text-ink-3 whitespace-nowrap">{f.label}</dt>
+            <dd className="text-ink-2 truncate" title={f.example}>
+              {f.example}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
 
 function RecentJobs({ onPick }: { onPick: (f: Record<string, string>) => void }) {
   const [list] = useState(recentJobs)

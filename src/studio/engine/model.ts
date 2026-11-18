@@ -150,6 +150,8 @@ export interface FieldDef {
   example: string
   /** 'location' fields drive bound photos */
   kind?: 'text' | 'money' | 'location' | 'long'
+  /** set by the template — recruiters can't change it (managers can, in the editor) */
+  locked?: boolean
   group?: string
 }
 

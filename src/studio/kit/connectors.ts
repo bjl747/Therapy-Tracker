@@ -36,7 +36,7 @@ export function hotJobToFields(j: HotJob): Record<string, string> {
     job_title: formatTitle(j.title),
     location: `${j.city}, ${j.state}`,
   }
-  if (j.jobType) out.job_type = j.jobType.toUpperCase()
+  // job type is locked by the template (e.g. ALLIED TRAVEL) — not taken from the Hot Job
   if (j.weeklyLow) out.weekly_pay = formatMoneyRange(j.weeklyHigh ? `${j.weeklyLow}-${j.weeklyHigh}` : `${j.weeklyLow}`)
   if (j.hourlyLow) out.wage_low = String(j.hourlyLow)
   if (j.hourlyHigh) out.wage_high = String(j.hourlyHigh)

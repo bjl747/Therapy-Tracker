@@ -98,3 +98,11 @@
 - Compared with today's Canva flow (duplicate last post, retype 9 fields, find a photo, export,
   upload, write caption): Studio is one form (or one Hot Job click / one paste for many), every size
   + GIF + caption at once, photo chosen automatically, and one click to LinkedIn.
+
+### BJ feedback — template-locked fields
+- Job type, benefits line, call to action and website are fixed by the template and must not be
+  changed by recruiters. Implemented end to end (FieldDef `locked`, locked text elements, hidden
+  from the kit form with a "Set by the template" summary, ignored in paste/Hot Jobs, forced in
+  `instantiate`, refused by the editor store for non-managers) + tests.
+- City photos: 25 collage images swapped for single photos (`fix_montages.py`); `meta.json`
+  shipped so the download can be finished from any normal connection.

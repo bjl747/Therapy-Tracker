@@ -2,7 +2,7 @@
 // photo on every page live.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ImageOff, MapPin, RefreshCw } from 'lucide-react'
+import { ImageOff, Lock, MapPin, RefreshCw } from 'lucide-react'
 import type { FieldDef } from '../../engine/model'
 import { markerKeys } from '../../engine/fields'
 import { cityIndex, nearbyCities, resolveLocation, thumbUrl, type CityPhoto } from '../../photos/cities'
@@ -16,6 +16,7 @@ const titleCase = (k: string) => k.replace(/_/g, ' ').replace(/^\w/, (c) => c.to
 export function FieldsPanel() {
   const design = useEditor((s) => s.design)!
   const readOnly = useEditor((s) => s.readOnly)
+  const canEditLocked = useEditor((s) => s.canEditLocked)
   const focus = useUi((s) => s.focusField)
   const inputs = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>())
 
@@ -72,11 +73,13 @@ export function FieldsPanel() {
         <Section key={g} title={g}>
           {fs.map((f) => {
             const value = design.fields[f.key] ?? ''
+            const lockedOut = !!f.locked && !canEditLocked
             const common = {
               className: 'input',
               value,
               placeholder: f.example,
-              disabled: readOnly,
+              disabled: readOnly || lockedOut,
+              title: f.locked ? (lockedOut ? 'Set by the template' : 'Template value — only managers can change this') : undefined,
               onFocus: begin,
               onBlur: end,
               'aria-label': f.label,
@@ -86,6 +89,7 @@ export function FieldsPanel() {
                 <label className="flex items-center gap-1.5 text-[12px] font-semibold text-ink-2" htmlFor={`fld-${f.key}`}>
                   {f.kind === 'location' && <MapPin size={12} className="shrink-0 text-ink-3" />}
                   <span className="truncate">{f.label}</span>
+                  {f.locked && <Lock size={11} className="shrink-0 text-ink-3" aria-label="Set by the template" />}
                 </label>
                 {f.kind === 'long' ? (
                   <textarea
