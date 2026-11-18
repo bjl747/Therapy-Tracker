@@ -8,12 +8,13 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowLeft, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, ListChecks, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
 import type { TemplateDef } from '../templates/types'
 import { BUILT_IN_TEMPLATES } from '../templates'
+import { HOT_JOBS_ROUNDUP, roundupFields } from '../templates/roundup'
 import { DesignCanvas, useAssetTick } from '../ui/DesignCanvas'
 import { caption } from './captions'
 import { tidyField } from './normalize'
@@ -612,6 +613,17 @@ function BatchMode({
     return out
   })
 
+  const nav = useNavigate()
+  /** one "Hot jobs this week" post from the first five rows */
+  const roundup = async () => {
+    const d = instantiate(HOT_JOBS_ROUNDUP, 'square', roundupFields(jobs), {
+      name: `Hot jobs roundup — ${jobs.length > 5 ? 'first 5 of ' : ''}${jobs.length} job${jobs.length === 1 ? '' : 's'}`,
+    })
+    await repo.saveDesign(d)
+    if (jobs.length > 5) toast('Roundup uses the first five jobs', 'Edit the rows in the Fields panel to swap any.')
+    nav(`/studio/design/${d.id}`)
+  }
+
   const run = async () => {
     setBusy('Starting…')
     try {
@@ -662,6 +674,9 @@ function BatchMode({
           <div className="eyebrow">{jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'} ready` : 'Preview'}</div>
           <div className="flex-1" />
           {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
+          <button className="btn" disabled={!jobs.length || !!busy} onClick={() => void roundup()} title="One post listing up to five of these jobs">
+            <ListChecks size={15} /> Roundup post
+          </button>
           <button className="btn btn-primary" disabled={!jobs.length || !!busy || !sizes.length} onClick={() => void run()}>
             <Layers size={15} /> Make {jobs.length || ''} kits
           </button>

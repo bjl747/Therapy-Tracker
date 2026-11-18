@@ -15,6 +15,7 @@ export function kitWarnings(d: Design): KitWarning[] {
   const missing = new Set<string>()
   for (const p of d.pages)
     for (const el of p.elements) {
+      if (el.showIf && !d.fields[el.showIf]?.trim()) continue
       if (el.type === 'image' && el.bind && !el.hidden && cityIndex().length > 0 && d.fields[el.bind]?.trim() && !resolveImage(el, d.fields)) {
         out.push({ level: 'warn', text: 'No city photo for this location yet — pick one with “Change”' })
         continue

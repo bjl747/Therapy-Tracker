@@ -75,6 +75,8 @@ export function lintPage(design: Design, pageIndex: number, measure: Measure): L
 
   for (const el of page.elements) {
     if (el.hidden) continue
+    // conditional rows (roundups) that are switched off aren't drawn — nothing to check
+    if (el.showIf && !design.fields[el.showIf]?.trim()) continue
     const box = aabb(el)
     if (fullyOutside(box, design)) {
       add(el, 'outside', 'warn', 'Is completely off the page and will not appear')

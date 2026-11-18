@@ -39,6 +39,8 @@ export interface BaseEl {
   /** brand lock: recruiters can't move/edit; managers can unlock */
   locked?: boolean
   hidden?: boolean
+  /** only draw when this field has a value (e.g. roundup rows 4–5) */
+  showIf?: string
   /** elements sharing a groupId select and move together */
   groupId?: string
   anim?: Anim

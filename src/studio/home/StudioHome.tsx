@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { design, SIZES, type SizeKey } from '../engine/model'
-import { BUILT_IN_TEMPLATES } from '../templates'
+import { BUILT_IN_TEMPLATES, type TemplateDef } from '../templates'
 import { instantiate } from '../templates/instantiate'
 import { repo, type BrandAsset, type DesignSummary } from '../data'
 import { DesignCanvas } from '../ui/DesignCanvas'
@@ -64,8 +64,8 @@ function CreateTab() {
     await repo.saveDesign(d)
     nav(`/studio/design/${d.id}`)
   }
-  const fromTemplate = async (size: string) => {
-    const d = instantiate(t, size)
+  const fromTemplate = async (tpl: TemplateDef, size: string) => {
+    const d = instantiate(tpl, size)
     await repo.saveDesign(d)
     nav(`/studio/design/${d.id}`)
   }
@@ -111,7 +111,7 @@ function CreateTab() {
           <span className="chip">{BUILT_IN_TEMPLATES.length}</span>
         </div>
         {BUILT_IN_TEMPLATES.map((tpl) => (
-          <div key={tpl.id} className="min-w-0">
+          <div key={tpl.id} className="min-w-0 mb-4 last:mb-0">
             <div className="flex items-baseline gap-2 mb-2 min-w-0">
               <div className="text-[13.5px] font-bold whitespace-nowrap">{tpl.name}</div>
               <div className="text-[12px] text-ink-3 truncate">{tpl.description}</div>
@@ -121,7 +121,7 @@ function CreateTab() {
                 const d = instantiate(tpl, size)
                 const h = 170
                 return (
-                  <button key={size} onClick={() => void fromTemplate(size)} className="shrink-0 text-left group">
+                  <button key={size} onClick={() => void fromTemplate(tpl, size)} className="shrink-0 text-left group">
                     <div className="rounded-lg overflow-hidden ring-1 ring-black/5 shadow-sm group-hover:ring-accent/60 transition">
                       <DesignCanvas design={d} width={Math.round((h * d.w) / d.h)} />
                     </div>

@@ -72,3 +72,11 @@
 - City photos: Wikimedia keeps rate-limiting this cloud machine (HTTP 429). Downloader slowed to be
   polite (4 s between files, 5–10 min back-off). Faster option for BJ: run
   `scripts/city-photos/download.py` from a normal office/home connection (see that README).
+
+### Critique round 7 (new magic: Hot Jobs roundup)
+- Argued: recruiters post weekly "hot jobs" lists; Canva makes that a tedious copy-paste job.
+- Added `showIf` to the model (element only draws when a field has a value) and a
+  "Hot Jobs Roundup" template (square + story, up to 5 rows, staggered slide-in animation).
+- Job Kit → Many jobs → **Roundup post** builds it from the pasted rows in one click.
+- Fixed: the home page "Templates" thumbnails always opened the first template.
+- Fixed: linter/kit warnings flagged switched-off roundup rows.

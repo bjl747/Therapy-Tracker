@@ -338,6 +338,7 @@ function drawText(ctx: Ctx, el: TextEl, design: Design, opts: RenderOptions) {
 
 export function drawElement(ctx: Ctx, el: El, design: Design, opts: RenderOptions, pageDuration: number) {
   if (el.hidden || opts.skip?.has(el.id)) return
+  if (el.showIf && !design.fields[el.showIf]?.trim()) return
   const a = animState(el.anim, opts.time)
   if (a.alpha <= 0) return
   ctx.save()
