@@ -39,6 +39,14 @@ else:
                 if k:
                     places.setdefault(st, {}).setdefault(k, [lat, lon])
 
+# Everyday names the Census spells differently ("Urban Honolulu CDP", "San Buenaventura (Ventura) city", and
+# "Carson City" loses its "City" to SUFFIX). Without these the three cities' photos had no coordinates, so nearby
+# towns (Kailua, HI) borrowed a photo 2,000+ miles away, and typing "Carson City, NV" found no place.
+ALIASES = {("HI", "honolulu"): "urban honolulu", ("CA", "ventura"): "san buenaventura ventura", ("NV", "carson city"): "carson"}
+for (st, alias), census in ALIASES.items():
+    if census in places.get(st, {}):
+        places[st].setdefault(alias, places[st][census])
+
 json.dump(places, open(os.path.join(OUT, "places.json"), "w"), separators=(",", ":"))
 idx_path = os.path.join(OUT, "index.json")
 idx = json.load(open(idx_path))
