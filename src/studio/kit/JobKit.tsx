@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowLeft, ListChecks, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, ListChecks, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
@@ -41,6 +41,27 @@ function loadDraft(): Record<string, string> | null {
 function saveDraft(f: Record<string, string>) {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(f))
+  } catch {
+    /* private mode */
+  }
+}
+
+const RECENT_KEY = 'studio.kit.recent'
+function recentJobs(): Record<string, string>[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+    return Array.isArray(v) ? v.slice(0, 10) : []
+  } catch {
+    return []
+  }
+}
+/** keep the last 10 distinct jobs this person made posts for (per browser) */
+function rememberJob(f: Record<string, string>) {
+  if (!f.job_title?.trim()) return
+  try {
+    const key = (j: Record<string, string>) => `${j.job_title}|${j.location}`.toLowerCase()
+    const list = [f, ...recentJobs().filter((j) => key(j) !== key(f))].slice(0, 10)
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list))
   } catch {
     /* private mode */
   }
@@ -127,6 +148,7 @@ export function JobKit() {
       const { downloadBlob } = await import('../export/raster')
       downloadBlob(await makeZip(files), `${slug(`${fields.job_title}-${fields.location}`)}-kit.zip`)
       toast('Kit downloaded', `${files.length} files`)
+      rememberJob(fields)
     } catch (e) {
       toast('Could not build the kit', e instanceof Error ? e.message : undefined, 'error')
     } finally {
@@ -141,9 +163,34 @@ export function JobKit() {
       await prepareDesign(d)
       await copyPngToClipboard(await exportPng(d, 0, { scale: 1, resolveImage }))
       toast('Image copied', 'Paste it straight into LinkedIn, Facebook or Teams.')
+      rememberJob(fields)
     } catch (e) {
       toast('Copy failed', e instanceof Error ? e.message : undefined, 'error')
     }
+  }
+
+  /** copy the post image, then open LinkedIn with the caption already typed —
+   *  the recruiter just pastes (Ctrl+V) the image and presses Post */
+  const postLinkedIn = async () => {
+    const size = sizes.includes('square') ? 'square' : sizes.includes('landscape') ? 'landscape' : sizes[0] ?? 'square'
+    // copy FIRST: the clipboard only works while this tab has focus. Browsers
+    // still allow the new tab for a few seconds after the click.
+    let copied = false
+    try {
+      const { exportPng, copyPngToClipboard } = await import('../export/raster')
+      const d = designs[size]
+      await prepareDesign(d)
+      await copyPngToClipboard(await exportPng(d, 0, { scale: 1, resolveImage }))
+      copied = true
+    } catch {
+      /* fall through — caption is still pre-filled */
+    }
+    const url = `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`
+    const w = window.open(url, '_blank', 'noopener')
+    if (!w) toast('Allow pop-ups to open LinkedIn', 'Or copy the caption and image with the buttons.', 'error')
+    else if (copied) toast('Image copied — press Ctrl+V in the LinkedIn post to attach it')
+    else toast('Couldn’t copy the image', 'The caption is filled in — attach the PNG instead.', 'error')
+    rememberJob(fields)
   }
 
   const downloadOne = async (size: string, kind: 'png' | 'gif') => {
@@ -238,6 +285,7 @@ export function JobKit() {
                 Clear all
               </button>
             </div>
+            <RecentJobs onPick={(f) => setFields({ ...f })} />
             {groups.map(([g, defs]) => (
               <fieldset key={g} className="mb-3">
                 <legend className="text-[11px] font-bold text-ink-2 mb-1.5">{g}</legend>
@@ -332,6 +380,9 @@ export function JobKit() {
                 </button>
               </div>
             </div>
+            <button className="btn btn-primary w-full mb-3" onClick={() => void postLinkedIn()} disabled={!sizes.length}>
+              <Send size={15} /> Post on LinkedIn
+            </button>
             <pre className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink-2 font-sans">{text}</pre>
           </section>
         </div>
@@ -341,6 +392,9 @@ export function JobKit() {
       {mode === 'one' && (
         <div className="sticky bottom-0 z-20 mt-auto px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
           {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
+          <button className="btn h-10 px-4" onClick={() => void postLinkedIn()} disabled={!!busy || !sizes.length} title="Copies the image and opens LinkedIn with the caption filled in">
+            <Send size={15} /> <span className="hidden sm:inline">Post on</span> LinkedIn
+          </button>
           <button className="btn btn-primary h-10 px-4" onClick={() => void downloadKit()} disabled={!!busy || !sizes.length}>
             <Download size={16} /> Download kit
             <span className="opacity-80 font-normal tabular-nums">({sizes.length + (gif && sizes.includes('square') ? 1 : 0) + 1} files)</span>
@@ -375,6 +429,27 @@ export function JobKit() {
 }
 
 // ── pieces ──────────────────────────────────────────────────
+
+function RecentJobs({ onPick }: { onPick: (f: Record<string, string>) => void }) {
+  const [list] = useState(recentJobs)
+  if (!list.length) return null
+  return (
+    <div className="mb-3">
+      <div className="text-[11px] font-bold text-ink-2 mb-1.5 flex items-center gap-1">
+        <History size={12} /> Recent jobs
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {list.map((j, i) => (
+          <button key={i} className="chip shrink-0 max-w-[220px]" onClick={() => onPick(j)} title={`${j.job_title} — ${j.location}`}>
+            <span className="truncate">
+              {j.job_title} · {j.location}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function Seg({
   value,

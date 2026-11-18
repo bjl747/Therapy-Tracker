@@ -80,3 +80,21 @@
 - Job Kit → Many jobs → **Roundup post** builds it from the pasted rows in one click.
 - Fixed: the home page "Templates" thumbnails always opened the first template.
 - Fixed: linter/kit warnings flagged switched-off roundup rows.
+
+### Critique round 8 (PDF tools like a person)
+- Added 2 PDFs + a PNG → 7 pages; select all, rotate; Download PDF → 7 pages, rotations correct
+  (verified by re-opening the file with pdf-lib). Landscape pages letterbox in portrait slots (fine).
+
+### Critique round 9 (accessibility)
+- Every visible button/input on home, kit (one + many), PDF and brand has an accessible name.
+
+### Critique round 10 (final human workflow — "Monday, 6 jobs to post")
+- Friction: posting meant Copy image → open LinkedIn → paste → back → Copy caption → paste.
+  Added **Post on LinkedIn**: copies the image, opens LinkedIn with the caption already typed —
+  the recruiter presses Ctrl+V and Post. (Copy happens first: browsers only allow clipboard writes
+  while our tab has focus.) Button lives in the always-visible bottom bar.
+- Friction: last week's jobs were gone unless saved as designs → **Recent jobs** chips (last 10,
+  per browser) at the top of the job form.
+- Compared with today's Canva flow (duplicate last post, retype 9 fields, find a photo, export,
+  upload, write caption): Studio is one form (or one Hot Job click / one paste for many), every size
+  + GIF + caption at once, photo chosen automatically, and one click to LinkedIn.
