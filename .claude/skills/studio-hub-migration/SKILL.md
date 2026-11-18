@@ -39,11 +39,13 @@ components/) — those are shims that imitate the hub.
    read by any active hub user; images only, ≤ 15 MB.
 
 ## Wire the data layer
-- Write `src/studio/data/firestoreRepo.ts` implementing `StudioRepo` (see `data/repo.ts`)
-  with `db` from `@/lib/firebase` and `await loadStorage()` for uploads. Upload images to
-  Storage and store URLs (never data URLs — Firestore docs max 1 MB). Store thumbnails in
-  Storage too.
-- In `src/studio/data/index.ts`: `export const repo = DEMO ? localRepo : firestoreRepo`.
+- `src/studio/data/firestoreRepo.ts` already implements `StudioRepo` on Firestore + Storage
+  (`makeFirestoreRepo({ seeAll })`): images and thumbnails go to Storage, data URLs are moved out
+  of designs before saving (Firestore docs max 1 MB). It has never run against a real project —
+  test it in the hub's emulator or a dev project first.
+- In `src/studio/data/index.ts`: `repo = DEMO ? localRepo : makeFirestoreRepo({ seeAll: isManager || role === 'account_manager' })`
+  (needs the auth context — simplest is a small `useRepo()` hook, or set it once after sign-in).
+- Firestore index needed: `hub_studio/summaries/rows` on `ownerUid ASC, updatedAt DESC`.
 - `onSnapshot` listeners for live lists; no offline cache (BJ's choice).
 
 ## Swap shims for hub pieces

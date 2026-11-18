@@ -15,16 +15,24 @@ src/
       fonts.ts            self-hosted OFL fonts (public/fonts), FontFace loading
     editor/               the canvas editor (no Konva — canvas + DOM overlay); see editor/README.md
       store.ts            zustand: selection, gestures, undo/redo, pages, brand locks
-    kit/                  Job Kit: one job → every size + GIF + caption; batch paste
-      normalize.ts        "$3,227 – $3,547", "3x12s, Nights"… (tested)
+    kit/                  Job Kit: one job → every size + GIF + caption; batch paste; roundup
+      JobKit.tsx          the screen (form, previews, caption, Post on LinkedIn, recent jobs)
+      normalize.ts        "$3,227 – $3,547", "3x12s, Nights", "RN – ICU"… (tested)
       captions.ts         specialty-aware captions + hashtags (no AI)
       batch.ts            paste-from-spreadsheet parser with fuzzy headers
+      connectors.ts       Hot Jobs source + Pay Intel hook (sample data until wired)
+      HotJobPicker.tsx    "From Hot Jobs" picker;  LocationInput.tsx  town autocomplete
+      warnings.ts         per-size "ready to post" checks
     templates/            template FAMILIES (one field set, a layout per size)
       jobPost.ts          the team's travel job post: square / portrait / story / landscape
+      roundup.ts          "Hot Jobs This Week": up to 5 jobs in one post (showIf rows)
     photos/               US city photo library + location parsing / nearest-city matching
+      cities.ts           index, matching (exact → nearest in state → nearest anywhere), search
+      places.ts           search-as-you-type over all ~33k US places
     export/               PNG/JPG, GIF encoder (own, worker), ZIP (own), design→PDF (pdf-lib)
     pdf/                  PDF Studio (pdf.js + pdf-lib): merge, reorder, sign, redact, forms
     data/                 StudioRepo interface; IndexedDB (demo) now, Firestore in the hub
+      firestoreRepo.ts    ready-made Firestore + Storage implementation (makeFirestoreRepo)
     home/                 Studio home (Create · My designs · Brand)
     ui/                   DesignCanvas (live preview), toast
   (everything else in src/ is a HUB SHIM — stand-ins for the hub's own files)

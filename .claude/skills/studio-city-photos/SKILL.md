@@ -16,7 +16,16 @@ Code: `src/studio/photos/cities.ts` (+ `location.ts`). Build scripts + how-to:
   require credit if anyone asks — the credit travels with the design.
 - **Matching**: exact city → nearest library city in the same state (by coordinates from
   the Census Gazetteer, `places.json`) → the state's largest city. Users can pin another.
-- **Rebuilding**: Wikimedia rate-limits cloud machines hard (HTTP 429). The scripts pace
-  themselves and resume (existing files are skipped) — just re-run `download.py`.
+- **Rebuilding / finishing**: Wikimedia rate-limits cloud machines hard (HTTP 429), and also
+  throttles originals and non-standard thumbnail widths — `download.py` only requests standard
+  widths (250/330/500/960/1280, smaller than the original). The scripts pace themselves and
+  resume (existing files are skipped). From a cloud session expect only a few photos per hour;
+  from a normal office/home connection the whole set takes ~1 hour. Don't try to get around a
+  block (other user agents, proxies) — be polite and slow, or run it elsewhere.
+- **After downloading**: run `places.py` (coordinates + `places.json`) then `focus.py`
+  (point-of-interest for cropping), both with the `public/photos/cities` path.
+- **Collages**: some Wikipedia city images are montages (e.g. `HsvMontage.jpg`, files named
+  *montage/collage*). They look bad on posts — prefer the article's lead photo or another
+  Wikidata image for those (still to do as of night 1).
 - **Swap a bad photo**: replace `<id>.jpg` (1280px wide JPEG) and `thumbs/<id>.jpg` (400px),
   update that entry's `credit` in `index.json`.

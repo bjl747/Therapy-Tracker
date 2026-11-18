@@ -48,7 +48,20 @@ co-editing, social scheduling, LLM features.
 
 ## Open questions for BJ
 
-- Hot Jobs field list and the pay-calculator hookup (planned connector:
-  `src/studio/connectors/`).
-- Original logo files (current ones are cropped from a screenshot).
+- Hot Jobs field list and the pay-calculator hookup (connector ready in `src/studio/kit/connectors.ts`).
+- Original logo files (current ones are cropped from a screenshot; transparent PNG/SVG wanted).
+- GQR brand fonts — gqr.com blocked automated checks (see `docs/studio/BRAND-FONTS.md`).
+- City photos: Wikimedia throttles cloud machines; finishing the download from a normal
+  connection is fastest (`scripts/city-photos/README.md`).
 - Which other sizes/brands the team posts.
+
+## Decisions log
+
+| Decision | Why |
+|---|---|
+| Own canvas editor, no Konva | Konva not approved; one renderer for screen + exports is a feature anyway |
+| pdf.js + pdf-lib for PDFs | Approved by BJ; reliable on any PDF |
+| No LLM | BJ's preference; deterministic captions/tidying/matching cover the need |
+| GIF photo held still | moving photo made GIFs 10 MB; still photo + animated text ≈ 0.6 MB |
+| Download names ASCII-only | Chrome saves non-ASCII names as "download" |
+| Locked brand pieces can't be dragged even by managers | prevents accidents; unlock first |

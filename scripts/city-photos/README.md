@@ -19,5 +19,12 @@ Run from this folder (Python 3 + Pillow):
 4. `python3 places.py ../../public/photos/cities` — writes `places.json`
    and adds coordinates to `index.json`.
 
+5. `python3 focus.py ../../public/photos/cities` — finds each photo's point of interest so
+   crops keep the skyline in frame.
+
+**Speed:** Wikimedia heavily rate-limits cloud servers. Run step 3 from a normal office or home
+internet connection (Python 3 + `pip install pillow`) and it finishes in about an hour; it
+skips photos that are already downloaded, so it can be stopped and restarted any time.
+
 Every photo keeps its author, licence and source link in `index.json`; the
 app shows that credit on any design that uses it.
