@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ImageOff, Lock, MapPin, RefreshCw } from 'lucide-react'
 import type { FieldDef } from '../../engine/model'
-import { markerKeys } from '../../engine/fields'
+import { fieldValue, markerKeys } from '../../engine/fields'
 import { cityIndex, nearbyCities, resolveLocation, thumbUrl, type CityPhoto } from '../../photos/cities'
 import { useEditor } from '../store'
 import { useUi } from '../uiStore'
@@ -63,8 +63,8 @@ export function FieldsPanel() {
     )
 
   const set = (key: string, v: string) => useEditor.getState().setFields({ [key]: v })
-  // one undo step per field visit, not per keystroke
-  const begin = () => useEditor.getState().beginGesture()
+  // one undo step per field visit, not per keystroke ('edit': autosave doesn't wait for blur)
+  const begin = () => useEditor.getState().beginGesture('edit')
   const end = () => useEditor.getState().endGesture()
 
   return (
@@ -72,7 +72,7 @@ export function FieldsPanel() {
       {groups.map(([g, fs]) => (
         <Section key={g} title={g}>
           {fs.map((f) => {
-            const value = design.fields[f.key] ?? ''
+            const value = fieldValue(design.fields, f.key) ?? ''
             const lockedOut = !!f.locked && !canEditLocked
             const common = {
               className: 'input',
@@ -109,7 +109,7 @@ export function FieldsPanel() {
                     onChange={(e) => set(f.key, e.target.value)}
                   />
                 )}
-                {f.kind === 'location' && <LocationPhoto field={f.key} value={value} pinned={design.fields[`${f.key}__photo`]} disabled={readOnly} />}
+                {f.kind === 'location' && <LocationPhoto field={f.key} value={value} pinned={fieldValue(design.fields, `${f.key}__photo`)} disabled={readOnly} />}
               </div>
             )
           })}

@@ -148,8 +148,9 @@ export function Editor({ designId, onExit, canEditLocked = false, readOnly = fal
       window.clearTimeout(timer.current)
       const arm = () => {
         timer.current = window.setTimeout(() => {
-          // never save half a drag
-          if (useEditor.getState().gestureBase) arm()
+          // never save half a drag — but a focused Fields input / inline text
+          // box ('edit' gesture) is saved as you type
+          if (useEditor.getState().gestureKind === 'pointer') arm()
           else void saveNow()
         }, 1200)
       }

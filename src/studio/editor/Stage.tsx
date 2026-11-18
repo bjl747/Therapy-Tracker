@@ -264,7 +264,7 @@ export function Stage({ compact }: { compact: boolean }) {
     if (cur?.k === 'pending') window.clearTimeout(cur.timer)
     if (cur && (cur.k === 'move' || cur.k === 'resize' || cur.k === 'rotate' || cur.k === 'crop')) {
       const st = useEditor.getState()
-      if (!commit && st.gestureBase) useEditor.setState({ design: st.gestureBase, gestureBase: null })
+      if (!commit && st.gestureBase) useEditor.setState({ design: st.gestureBase, gestureBase: null, gestureKind: null })
       else st.endGesture()
     }
     g.current = null
@@ -1043,7 +1043,8 @@ function TextEditor({ el, view }: { el: TextEl; view: View }) {
 
   useEffect(() => {
     done.current = false
-    useEditor.getState().beginGesture()
+    // an 'edit' gesture: one undo step for the visit, but autosave keeps going while typing
+    useEditor.getState().beginGesture('edit')
     const t = ref.current
     if (t) {
       t.focus({ preventScroll: true })

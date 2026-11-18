@@ -26,7 +26,7 @@ import {
 import type { Design } from '../engine/model'
 import { drawPage, measure, pageImageSrcs } from '../engine/render'
 import { loadImage } from '../engine/images'
-import { markerKeys } from '../engine/fields'
+import { fieldValue, markerKeys } from '../engine/fields'
 import { resolveImage } from '../services'
 import { copyPngToClipboard, downloadBlob, exportJpg, exportPng, safeFileName } from '../export/raster'
 import { designHasAnimation, exportGif } from '../export/animate'
@@ -111,7 +111,7 @@ export function TopBar({ compact, status, onExit }: { compact: boolean; status: 
 function SaveChip({ status, compact }: { status: SaveStatus; compact: boolean }) {
   const map: Record<SaveStatus, { text: string; cls: string }> = {
     saved: { text: 'Saved', cls: 'text-ink-3' },
-    dirty: { text: 'Saving…', cls: 'text-ink-3' },
+    dirty: { text: 'Unsaved changes', cls: 'text-ink-3' },
     saving: { text: 'Saving…', cls: 'text-ink-3' },
     error: { text: 'Not saved', cls: 'text-red-500' },
     readonly: { text: 'View only', cls: 'text-ink-3' },
@@ -184,7 +184,7 @@ function LintBadge({ compact }: { compact: boolean }) {
     useEditor.setState({ selection: [i.elId] })
     if (i.kind === 'missing') {
       const el = st.design?.pages[i.pageIndex]?.elements.find((e) => e.id === i.elId)
-      const key = el?.type === 'text' ? markerKeys(el.text).find((k) => !st.design?.fields[k]?.trim()) : undefined
+      const key = el?.type === 'text' ? markerKeys(el.text).find((k) => !fieldValue(st.design?.fields ?? {}, k)?.trim()) : undefined
       if (key) useUi.getState().focusFieldKey(key)
     }
   }
