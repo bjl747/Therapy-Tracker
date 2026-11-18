@@ -16,3 +16,4 @@ Latin-subset WOFF2 files, self-hosted from Google Fonts. All families below are 
 | Caveat | OFL 1.1 | https://fonts.google.com/specimen/Caveat |
 | Archivo Black | OFL 1.1 | https://fonts.google.com/specimen/Archivo+Black |
 | Barlow Condensed | OFL 1.1 | https://fonts.google.com/specimen/Barlow+Condensed |
+| Jost | OFL 1.1 | https://fonts.google.com/specimen/Jost (stand-in for UnitiMed brand font Futura, which is commercial) |

@@ -14,6 +14,10 @@ export interface FontDef {
   weights: number[];
   italic: boolean;
   files: FontFile[];
+  /** Brand this font belongs to, e.g. 'GQR' or 'UnitiMed'. */
+  brand?: string;
+  /** If set, this bundled font is a free stand-in for the named (licensed) brand font. */
+  standInFor?: string;
 }
 
 const f = (name: string, weight: string, style: 'normal' | 'italic' = 'normal'): FontFile => ({
@@ -71,7 +75,21 @@ export const FONTS: FontDef[] = [
     family: 'Barlow Condensed', category: 'display', weights: [500, 700, 800], italic: false,
     files: [f('barlow-condensed-500', '500'), f('barlow-condensed-700', '700'), f('barlow-condensed-800', '800')],
   },
+  {
+    // Stand-in for UnitiMed's licensed Futura (Futura is commercial, not bundled).
+    family: 'Jost', category: 'sans', weights: [400, 500, 600, 700], italic: true,
+    files: [f('jost-normal', '300 700'), f('jost-italic', '300 700', 'italic')],
+    brand: 'UnitiMed', standInFor: 'Futura',
+  },
 ];
+
+// GQR Healthcare fonts: NOT yet identified (gqr.com blocked automated requests, see docs/studio/BRAND-FONTS.md).
+// Add entries with brand: 'GQR' to FONTS once verified; they will sort first here.
+export function brandFonts(brand?: string): FontDef[] {
+  return brand ? FONTS.filter((x) => x.brand === brand) : FONTS.filter((x) => !!x.brand);
+}
+
+export const BRAND_FONTS: FontDef[] = [...brandFonts('GQR'), ...brandFonts('UnitiMed')];
 
 export const FONT_PAIRS: { heading: string; body: string; label: string }[] = [
   { heading: 'Playfair Display', body: 'Lora', label: 'Classic editorial' },
@@ -82,6 +100,7 @@ export const FONT_PAIRS: { heading: string; body: string; label: string }[] = [
   { heading: 'Space Grotesk', body: 'Inter', label: 'Techy' },
   { heading: 'Archivo Black', body: 'Barlow Condensed', label: 'Heavy impact' },
   { heading: 'Caveat', body: 'Poppins', label: 'Friendly handwritten' },
+  { heading: 'Jost', body: 'Jost', label: 'UnitiMed brand (Futura stand-in)' },
 ];
 
 const loaded = new Set<string>(); // FontFace keys already registered

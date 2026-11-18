@@ -493,7 +493,7 @@ function ImageSection({ els, patchAll }: { els: ImageEl[]; patchAll: (fn: (e: El
       <Section
         title="Adjust"
         right={
-          (f.brightness || f.contrast || f.saturation || f.blur) && (
+          !!(f.brightness || f.contrast || f.saturation || f.blur) && (
             <button type="button" className="text-[11.5px] font-semibold text-accent" onClick={() => filt({ brightness: 0, contrast: 0, saturation: 0, blur: 0 })}>
               Reset
             </button>
