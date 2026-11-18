@@ -21,6 +21,17 @@ export interface HotJob {
   weeks?: number
   start?: string
   facility?: string
+  // What the post itself says, for the Job Kit's Work out pay strip to show and double-check (BJ, 2026-11-18). Each is
+  // set only when it is on the post: nothing here is a default or a guess.
+  billRate?: number
+  /** the Deal Key vendor's id; none when the vendor was typed by hand on the post */
+  vendorId?: string
+  vendorName?: string
+  /** the post's own fee / NBO text ("4%-5%", "Varies (8-13)") */
+  vendorFee?: string
+  nbo?: string
+  zip?: string
+  hours?: number
 }
 
 export interface JobSource {
@@ -42,6 +53,9 @@ export interface PayQuote {
   weeks?: number
   /** the post's start date text ("ASAP", "12/7", "Jan 12") */
   start?: string
+  /** a hot job's own fee / NBO text: used instead of the vendor's (and on their own when the vendor was typed by hand) */
+  fee?: string
+  nbo?: string
 }
 export type PayAnswer =
   | { ok: true; weekly: [number, number]; hourly: [number, number]; note: string }
@@ -59,6 +73,15 @@ export const setPayTools = (t: PayTools | null) => {
 }
 export const getPayTools = () => payTools
 
+/** The Work out pay strip's numbers, kept with the job (so Recent jobs bring them back); they aren't on any design.
+ *  `fee` / `nbo` / `vendorName` and `hot` are only set when the job came from Hot Jobs. */
+export const PAY_KEYS = {
+  bill: 'pay__bill', vendor: 'pay__vendor', zip: 'pay__zip', hours: 'pay__hours', weeks: 'pay__weeks',
+  fee: 'pay__fee', nbo: 'pay__nbo', vendorName: 'pay__vendor_name', hot: 'pay__hot',
+} as const
+/** the strip's vendor value for a hot job whose vendor was typed by hand (its fee is on the post, not in Deal Key) */
+export const POST_VENDOR = '@post'
+
 export function hotJobToFields(j: HotJob): Record<string, string> {
   const out: Record<string, string> = {
     job_title: formatTitle(j.title),
@@ -72,6 +95,17 @@ export function hotJobToFields(j: HotJob): Record<string, string> {
   if (j.shift) out.shift = formatShift(j.shift)
   if (j.weeks) out.duration = formatDuration(String(j.weeks))
   if (j.start) out.start_date = j.start
+  // the post's own numbers → the Work out pay strip
+  if (j.billRate) out[PAY_KEYS.bill] = Number.isInteger(j.billRate) ? String(j.billRate) : j.billRate.toFixed(2)
+  if (j.vendorId || j.vendorFee) {
+    out[PAY_KEYS.vendor] = j.vendorId || POST_VENDOR
+    if (j.vendorName) out[PAY_KEYS.vendorName] = j.vendorName
+    if (j.vendorFee) out[PAY_KEYS.fee] = j.vendorFee
+    if (j.nbo) out[PAY_KEYS.nbo] = j.nbo
+  }
+  if (j.zip) out[PAY_KEYS.zip] = j.zip
+  if (j.hours) out[PAY_KEYS.hours] = String(j.hours)
+  if (j.weeks) out[PAY_KEYS.weeks] = String(j.weeks)
   return out
 }
 
