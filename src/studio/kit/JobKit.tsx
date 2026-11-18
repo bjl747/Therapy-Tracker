@@ -29,7 +29,7 @@ import { useToast } from '../ui/toast'
 import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
-import { PayCalc } from './PayCalc'
+import { PayCalc, PAY_KEYS } from './PayCalc'
 import { kitWarnings } from './warnings'
 
 const DRAFT_KEY = 'studio.kit.draft'
@@ -477,7 +477,10 @@ export function JobKit() {
         <HotJobPicker
           onClose={() => setHotOpen(false)}
           onPick={(f) => {
-            setFields((cur) => ({ ...cur, ...f, location__photo: '' }))
+            // start the pay clean: a hot job without a pay range (details missing on the post) must not keep the last
+            // job's pay or have the Work out pay strip refill it from old numbers (BJ, 2026-11-18)
+            const blankPay = Object.fromEntries([...Object.values(PAY_KEYS), 'weekly_pay', 'wage_low', 'wage_high'].map((k) => [k, '']))
+            setFields((cur) => ({ ...cur, ...blankPay, ...f, location__photo: '' }))
             setMode('one')
             setHotOpen(false)
           }}
