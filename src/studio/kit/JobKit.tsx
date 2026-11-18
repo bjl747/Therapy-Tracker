@@ -30,6 +30,7 @@ import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
 import { PayCalc, PAY_KEYS } from './PayCalc'
+import { useAuth } from '@/context/AuthContext'
 import { kitWarnings } from './warnings'
 
 const DRAFT_KEY = 'studio.kit.draft'
@@ -118,6 +119,8 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 export function JobKit() {
   const nav = useNavigate()
   const toast = useToast()
+  // View access: make and download posts; saving designs / the editor needs Edit (the rules say the same)
+  const canEdit = useAuth().can('studio') === 'edit'
   const { templates } = useTemplates()
   const choices = kitTemplates(templates)
   const [templateId, setTemplateId] = useState(() => {
@@ -426,7 +429,7 @@ export function JobKit() {
                   onCopy={() => void copyImage(s)}
                   onPng={() => void downloadOne(s, 'png')}
                   onGif={gif ? () => void downloadOne(s, 'gif') : undefined}
-                  onEdit={() => void openInEditor(s)}
+                  onEdit={canEdit ? () => void openInEditor(s) : undefined}
                 />
               ))}
               {sizes.length === 0 && (
@@ -592,7 +595,8 @@ function PreviewCard({
   onCopy: () => void
   onPng: () => void
   onGif?: () => void
-  onEdit: () => void
+  /** absent for View access (opening the editor saves the kit as designs) */
+  onEdit?: () => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(300)
@@ -617,9 +621,15 @@ function PreviewCard({
         </div>
       </div>
       <div ref={box} className="flex-1 flex items-center justify-center rounded-xl bg-surface-2/70 p-2 min-h-[120px]">
-        <button onClick={onEdit} className="rounded-lg overflow-hidden shadow-md ring-1 ring-black/5 hover:ring-accent/60 transition" aria-label={`Edit ${label}`}>
-          <DesignCanvas design={design} width={Math.max(60, width - 16)} />
-        </button>
+        {onEdit ? (
+          <button onClick={onEdit} className="rounded-lg overflow-hidden shadow-md ring-1 ring-black/5 hover:ring-accent/60 transition" aria-label={`Edit ${label}`}>
+            <DesignCanvas design={design} width={Math.max(60, width - 16)} />
+          </button>
+        ) : (
+          <div className="rounded-lg overflow-hidden shadow-md ring-1 ring-black/5">
+            <DesignCanvas design={design} width={Math.max(60, width - 16)} />
+          </div>
+        )}
       </div>
       {warnings.length > 0 && (
         <ul className="mt-2 space-y-1">
@@ -648,9 +658,11 @@ function PreviewCard({
             <Film size={14} /> GIF
           </button>
         )}
-        <button className="btn h-8 px-2.5 flex-1" onClick={onEdit}>
-          <PencilLine size={14} /> Edit
-        </button>
+        {onEdit && (
+          <button className="btn h-8 px-2.5 flex-1" onClick={onEdit}>
+            <PencilLine size={14} /> Edit
+          </button>
+        )}
       </div>
     </div>
   )
@@ -775,6 +787,7 @@ function BatchMode({
   const toast = useToast()
   const [raw, setRaw] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const canEdit = useAuth().can('studio') === 'edit' // the roundup opens as a saved design: Edit only
   const parsed = useMemo(() => parseJobs(raw, template.fieldDefs), [raw, template])
   const base = Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.example]))
   const jobs = parsed.jobs.map((j) => {
@@ -846,9 +859,9 @@ function BatchMode({
           <div className="eyebrow">{jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'} ready` : 'Preview'}</div>
           <div className="flex-1" />
           {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
-          <button className="btn" disabled={!jobs.length || !!busy} onClick={() => void roundup()} title="One post listing up to five of these jobs">
+          {canEdit && <button className="btn" disabled={!jobs.length || !!busy} onClick={() => void roundup()} title="One post listing up to five of these jobs">
             <ListChecks size={15} /> Roundup post
-          </button>
+          </button>}
           <button className="btn btn-primary" disabled={!jobs.length || !!busy || !sizes.length} onClick={() => void run()}>
             <Layers size={15} /> Make {jobs.length || ''} kits
           </button>

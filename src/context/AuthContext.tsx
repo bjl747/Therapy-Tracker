@@ -25,7 +25,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user: HubUser = { ...DEMO_USER, role }
   const value: AuthValue = {
     user,
-    can: (f) => (user.role === 'admin' ? 'edit' : user.access?.[f] ?? ROLE_DEFAULTS[user.role][f]),
+    can: (f) => {
+      // SHIM ONLY: preview Studio at View access (localStorage demo.studioLevel = 'view'), as an admin may grant it
+      if (f === 'studio') {
+        try {
+          const o = localStorage.getItem('demo.studioLevel')
+          if (o === 'view' || o === 'edit') return o
+        } catch {
+          /* ignore */
+        }
+      }
+      return user.role === 'admin' ? 'edit' : user.access?.[f] ?? ROLE_DEFAULTS[user.role][f]
+    },
     isManager: user.role === 'admin' || user.role === 'manager',
     setDemoRole: (r) => {
       setRole(r)
