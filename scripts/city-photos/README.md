@@ -13,7 +13,7 @@ step 3 onward:
 ```bash
 pip install pillow
 python3 download.py ../../public/photos/cities
-python3 places.py ../../public/photos/cities   # needs the Gazetteer file from step 1
+python3 places.py ../../public/photos/cities   # reuses the bundled places.json
 python3 focus.py ../../public/photos/cities
 ```
 
