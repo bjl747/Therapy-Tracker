@@ -6,6 +6,7 @@
 import { DEMO } from '@/lib/demo'
 import { localRepo, type DesignSummary, type StudioRepo } from './repo'
 import { makeFirestoreRepo } from './firestoreRepo'
+import type { Design } from '../engine/model'
 
 let current: StudioRepo = localRepo
 let key = 'local'
@@ -23,7 +24,10 @@ export const savesToHub = () => key !== 'local'
 
 export const repo: StudioRepo = {
   listDesigns: () => current.listDesigns(),
-  getDesign: (id) => current.getDesign(id),
+  getDesign: (id) => {
+    const p = preview(id)
+    return p ? Promise.resolve(p) : current.getDesign(id)
+  },
   saveDesign: (d, thumb) => current.saveDesign(d, thumb),
   deleteDesign: (id) => current.deleteDesign(id),
   listTemplates: () => current.listTemplates(),
@@ -36,6 +40,31 @@ export const repo: StudioRepo = {
   uploadImage: (f) => current.uploadImage(f),
   deleteUpload: (id) => current.deleteUpload(id),
 }
+
+// A design opened only to look at: someone with View access clicking a Job Kit post to see it full-size (BJ, 2026-11-18).
+// It is never saved: kept in memory, and in this tab's session storage so a page refresh doesn't lose it. One at a time.
+const PREVIEW_KEY = 'studio.preview'
+let held: Design | null = null
+export function stashPreview(d: Design): void {
+  held = d
+  try {
+    sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(d))
+  } catch {
+    /* private mode / too big: memory only */
+  }
+}
+function preview(id: string): Design | null {
+  if (held?.id === id) return held
+  try {
+    const d = JSON.parse(sessionStorage.getItem(PREVIEW_KEY) ?? 'null') as Design | null
+    if (d?.id === id) return (held = d)
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+/** true for a design opened with `stashPreview` (the editor shows it read-only and goes back to the Job Kit) */
+export const isPreview = (id: string) => !!preview(id)
 
 /** Designs still in this browser from before Studio saved to the hub (admins tried it browser-only on 2026-11-18). */
 export async function localLeftovers(): Promise<DesignSummary[]> {

@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowLeft, ListChecks, Lock, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, ListChecks, Lock, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, Maximize2, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
@@ -24,12 +24,13 @@ import { parseJobs } from './batch'
 import { nearbyCities, resolveLocation, searchCities, thumbUrl, cityIndex, type CityPhoto } from '../photos/cities'
 import { formatLocation } from '../photos/location'
 import { prepareDesign, resolveImage } from '../services'
-import { repo } from '../data'
+import { repo, stashPreview } from '../data'
 import { useToast } from '../ui/toast'
 import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
-import { PayCalc, PAY_KEYS } from './PayCalc'
+import { PayCalc } from './PayCalc'
+import { PAY_KEYS } from './connectors'
 import { useAuth } from '@/context/AuthContext'
 import { kitWarnings } from './warnings'
 
@@ -114,6 +115,22 @@ async function buildKitFiles(
   return files
 }
 
+/** true when `el` fits inside the scrolling area with room to spare. A side card only sticks while you scroll when all
+ *  of it stays on screen; a card taller than the window scrolls with the page instead (its bottom would be cut off). */
+function useFits(el: HTMLElement | null, scroller: HTMLElement | null, gap = 32) {
+  const [fits, setFits] = useState(false)
+  useEffect(() => {
+    if (!el || !scroller || typeof ResizeObserver === 'undefined') return setFits(false)
+    const check = () => setFits(el.offsetHeight + gap <= scroller.clientHeight)
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    ro.observe(scroller)
+    check()
+    return () => ro.disconnect()
+  }, [el, scroller, gap])
+  return fits
+}
+
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 72).replace(/-+$/, '') || 'job'
 
 export function JobKit() {
@@ -151,6 +168,12 @@ export function JobKit() {
   const [photoPicker, setPhotoPicker] = useState(false)
   const [hotOpen, setHotOpen] = useState(false)
   const previewsRef = useRef<HTMLElement>(null)
+  // the page scrolls inside this box, above the action bar (which is a footer, not an overlay)
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  const [detailsEl, setDetailsEl] = useState<HTMLElement | null>(null)
+  const [captionEl, setCaptionEl] = useState<HTMLElement | null>(null)
+  const detailsFit = useFits(detailsEl, scroller)
+  const captionFit = useFits(captionEl, scroller)
   useAssetTick()
 
   useEffect(() => {
@@ -279,6 +302,16 @@ export function JobKit() {
     }
   }
 
+  /** View access: open a size full-size in the editor, read-only. Nothing is saved (the design is kept in this tab only). */
+  const openPreview = (size: string) => {
+    const d = instantiate(template, size, fields, {
+      name: `${fields.job_title || 'Job post'} — ${fields.location || ''} (${SIZES[size as keyof typeof SIZES]?.label ?? size})`,
+    })
+    stashPreview(d)
+    rememberJob(fields)
+    nav(`/studio/design/${d.id}`)
+  }
+
   const groups = useMemo(() => {
     const g = new Map<string, FieldDef[]>()
     // template-locked fields (job type, benefits, footer) aren't editable here
@@ -288,6 +321,7 @@ export function JobKit() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1">
+      <div ref={setScroller} className="flex-1 min-h-0 overflow-y-auto">
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 pt-4 pb-3">
         <button className="btn" onClick={() => nav('/studio')} aria-label="Back to Studio">
           <ArrowLeft size={15} />
@@ -329,6 +363,9 @@ export function JobKit() {
         <BatchMode template={template} sizes={sizes} gif={gif} onPick={(f) => { setFields(f); setMode('one') }} />
       ) : (
         <div className="grid gap-4 px-4 md:px-6 pb-6 min-h-0 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)_380px]">
+          {/* phone: the form and its mini preview share one box, so the preview follows only while the form is on screen
+              (on wide screens the box disappears and the form is a grid column as before) */}
+          <div className="flex flex-col gap-4 min-w-0 lg:contents">
           {/* ── phone: live mini preview that follows you while you type ── */}
           {sizes[0] && (
             <button
@@ -346,7 +383,7 @@ export function JobKit() {
           )}
 
           {/* ── job details ── */}
-          <section className="card card-accent p-4 min-w-0 self-start lg:sticky lg:top-4">
+          <section ref={setDetailsEl} className={clsx('card card-accent p-4 min-w-0 self-start', detailsFit && 'lg:sticky lg:top-4')}>
             <div className="flex items-center justify-between mb-2">
               <div className="eyebrow">Job details</div>
               <button
@@ -400,6 +437,7 @@ export function JobKit() {
             ))}
             <LockedSummary defs={template.fieldDefs} />
           </section>
+          </div>
 
           {/* ── previews ── */}
           <section className="min-w-0 scroll-mt-20" ref={previewsRef}>
@@ -430,6 +468,7 @@ export function JobKit() {
                   onPng={() => void downloadOne(s, 'png')}
                   onGif={gif ? () => void downloadOne(s, 'gif') : undefined}
                   onEdit={canEdit ? () => void openInEditor(s) : undefined}
+                  onOpen={canEdit ? undefined : () => openPreview(s)}
                 />
               ))}
               {sizes.length === 0 && (
@@ -439,7 +478,7 @@ export function JobKit() {
           </section>
 
           {/* ── caption ── */}
-          <section className="card p-4 min-w-0 self-start lg:col-start-2 2xl:col-start-auto 2xl:sticky 2xl:top-4">
+          <section ref={setCaptionEl} className={clsx('card p-4 min-w-0 self-start lg:col-start-2 2xl:col-start-auto', captionFit && '2xl:sticky 2xl:top-4')}>
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="eyebrow">Post caption</div>
               <div className="flex gap-1.5">
@@ -461,11 +500,12 @@ export function JobKit() {
           </section>
         </div>
       )}
+      </div>
 
-      {/* sticky action bar */}
+      {/* action bar: a footer under the scrolling area, so it stays at the bottom of the window and never covers the page */}
       {mode === 'one' && (
-        <div className="sticky bottom-0 z-20 mt-auto px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
-          {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
+        <div className="shrink-0 px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
+          {busy && <span className="text-[12px] text-ink-3 truncate min-w-0">{busy}</span>}
           <button className="btn h-10 px-4" onClick={() => void postLinkedIn()} disabled={!!busy || !sizes.length} title="Copies the image and opens LinkedIn with the caption filled in">
             <Send size={15} /> <span className="hidden sm:inline">Post on</span> LinkedIn
           </button>
@@ -482,8 +522,11 @@ export function JobKit() {
           onPick={(f) => {
             // start the pay clean: a hot job without a pay range (details missing on the post) must not keep the last
             // job's pay or have the Work out pay strip refill it from old numbers (BJ, 2026-11-18)
-            const blankPay = Object.fromEntries([...Object.values(PAY_KEYS), 'weekly_pay', 'wage_low', 'wage_high'].map((k) => [k, '']))
-            setFields((cur) => ({ ...cur, ...blankPay, ...f, location__photo: '' }))
+            // ...and the same for shift / duration: only what the post really has. The post's bill rate, vendor, zip, hours
+            // and weeks land in the Work out pay strip to double-check (BJ, 2026-11-18); `hot` marks the job as a hot job, so
+            // the strip asks for anything the post is missing instead of guessing.
+            const blankPay = Object.fromEntries([...Object.values(PAY_KEYS), 'weekly_pay', 'wage_low', 'wage_high', 'shift', 'duration'].map((k) => [k, '']))
+            setFields((cur) => ({ ...cur, ...blankPay, ...f, [PAY_KEYS.hot]: '1', location__photo: '' }))
             setMode('one')
             setHotOpen(false)
           }}
@@ -588,6 +631,7 @@ function PreviewCard({
   onPng,
   onGif,
   onEdit,
+  onOpen,
 }: {
   design: Design
   label: string
@@ -597,6 +641,8 @@ function PreviewCard({
   onGif?: () => void
   /** absent for View access (opening the editor saves the kit as designs) */
   onEdit?: () => void
+  /** View access: open the post full-size, read-only, without saving */
+  onOpen?: () => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(300)
@@ -621,8 +667,13 @@ function PreviewCard({
         </div>
       </div>
       <div ref={box} className="flex-1 flex items-center justify-center rounded-xl bg-surface-2/70 p-2 min-h-[120px]">
-        {onEdit ? (
-          <button onClick={onEdit} className="rounded-lg overflow-hidden shadow-md ring-1 ring-black/5 hover:ring-accent/60 transition" aria-label={`Edit ${label}`}>
+        {onEdit || onOpen ? (
+          <button
+            onClick={onEdit ?? onOpen}
+            className="rounded-lg overflow-hidden shadow-md ring-1 ring-black/5 hover:ring-accent/60 transition"
+            aria-label={onEdit ? `Edit ${label}` : `Open ${label} full size`}
+            title={onEdit ? undefined : 'Open full size'}
+          >
             <DesignCanvas design={design} width={Math.max(60, width - 16)} />
           </button>
         ) : (
@@ -661,6 +712,11 @@ function PreviewCard({
         {onEdit && (
           <button className="btn h-8 px-2.5 flex-1" onClick={onEdit}>
             <PencilLine size={14} /> Edit
+          </button>
+        )}
+        {!onEdit && onOpen && (
+          <button className="btn h-8 px-2.5 flex-1" onClick={onOpen} title="Open full size (view only)">
+            <Maximize2 size={14} /> Open
           </button>
         )}
       </div>

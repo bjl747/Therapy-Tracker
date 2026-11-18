@@ -11,7 +11,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { StudioErrorBoundary } from './ui/ErrorBoundary'
 import { LayoutTemplate, Save, X } from 'lucide-react'
-import { configureRepo, repo } from './data'
+import { configureRepo, isPreview, repo } from './data'
 import { useEditor } from './editor/store'
 import { useTemplateLib, effectiveTemplates } from './templates/store'
 import { applyDesignToTemplate } from './templates/admin'
@@ -63,6 +63,8 @@ function EditorRoute() {
   // AMs can open everyone's designs but only owners and managers / admins change them (the rules say the same)
   const othersDesign = !!owner && owner !== user?.uid && !isManager && !isAdmin
   const editingTemplate = !!meta?.templateEdit && isAdmin
+  // a Job Kit post opened just to look at (View access): never saved, and Back returns to the Job Kit
+  const preview = isPreview(id)
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {editingTemplate && meta && <TemplateEditBar templateId={meta.templateId} size={meta.size} designId={id} />}
@@ -70,10 +72,10 @@ function EditorRoute() {
         <Editor
           key={id}
           designId={id}
-          onExit={() => nav(editingTemplate ? `/studio/templates?t=${meta!.templateId}` : '/studio/designs')}
+          onExit={() => nav(preview ? '/studio/kit' : editingTemplate ? `/studio/templates?t=${meta!.templateId}` : '/studio/designs')}
           // only admins can move/edit brand-locked pieces and locked fields
           canEditLocked={isAdmin}
-          readOnly={can('studio') !== 'edit' || othersDesign}
+          readOnly={can('studio') !== 'edit' || othersDesign || preview}
         />
       </div>
     </div>
