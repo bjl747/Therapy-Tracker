@@ -24,6 +24,7 @@ import { COLLECTION_V08_THUMBNAILS } from './collection-v08-thumbnails'
 import { COLLECTION_V08_LOGOS } from './collection-v08-logos'
 import { COLLECTION_V17_FIELDS } from './collection-v17-fields'
 import { templateVariants } from './variants'
+import { COLLECTION_JOB_POSTS } from './collection-job-posts'
 
 export type { TemplateDef } from './helpers'
 
@@ -45,7 +46,13 @@ export const BASE_TEMPLATES: TemplateDef[] = [
  * Variants are derived at module load, so the shipped bytes stay at
  * the originals' size; the DB seed materialises the same list.
  */
-export const TEMPLATES: TemplateDef[] = [...BASE_TEMPLATES, ...templateVariants(BASE_TEMPLATES)]
+// Canva 2.0: the team's job-post templates lead the library (and are
+// kept out of the colourway variants — they carry brand colours).
+export const TEMPLATES: TemplateDef[] = [
+  ...COLLECTION_JOB_POSTS,
+  ...BASE_TEMPLATES,
+  ...templateVariants(BASE_TEMPLATES),
+]
 
 export function templatesAsRecords(): TemplateRecord[] {
   return TEMPLATES.map((t) => ({

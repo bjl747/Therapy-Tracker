@@ -4,11 +4,14 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Sparkles, Clock, X, Check, Gem, BadgeCheck, BookMarked, Trash2, Braces } from 'lucide-react'
 import { TEMPLATES, type TemplateDef } from '@/lib/templates'
 import { fillTemplateFields } from '@/lib/templates/fields'
+import { applyCityPhoto } from '@/lib/city-photos'
+import { CITY_PHOTO_LAYER } from '@/lib/templates/collection-job-posts'
 import { useEditorStore } from '@/store/editor-store'
 import { DesignPreview } from '@/components/design-preview'
 import { ensureDocumentFonts } from '@/lib/fonts/loader'
 import { cn } from '@/lib/utils'
 import { TEMPLATE_CATEGORIES, type PageData } from '@/lib/types'
+import { toast } from '@/hooks/use-toast'
 
 /** v0.17 (Wave 2): the shape GET /api/templates/user returns */
 interface UserTemplateRecord {
@@ -76,9 +79,29 @@ export function TemplatesPanel() {
     setPreview(null)
   }
 
-  const applyFilled = () => {
-    if (!fillTarget) return
-    applyTemplate({ ...fillTarget, pages: fillTemplateFields(fillTarget.pages, fillValues) })
+  const [filling, setFilling] = useState(false)
+  const applyFilled = async () => {
+    if (!fillTarget || filling) return
+    let pages = fillTemplateFields(fillTarget.pages, fillValues)
+    // Canva 2.0: job-post templates pull in a photo of the job's city
+    if (fillValues.location?.trim()) {
+      setFilling(true)
+      try {
+        const res = await applyCityPhoto(pages, fillValues.location, CITY_PHOTO_LAYER)
+        pages = res.pages
+        if (res.match && res.match.kind !== 'exact') {
+          toast({
+            title: `Using a photo of ${res.match.photo.city}, ${res.match.photo.st}`,
+            description: 'The closest city we have a photo for. Swap it from Photos → US Cities if you prefer another.',
+          })
+        }
+      } catch {
+        /* keep the template's default photo */
+      } finally {
+        setFilling(false)
+      }
+    }
+    applyTemplate({ ...fillTarget, pages })
     setFillTarget(null)
   }
 
@@ -250,8 +273,8 @@ export function TemplatesPanel() {
             </div>
             <div className="flex items-center justify-between mt-4">
               <span className="text-[10px] text-white/35">Tip: fill with CSV in bulk from the dashboard</span>
-              <button className="btn-cv h-9 px-4 text-[13px] flex items-center gap-1.5" onClick={applyFilled}>
-                <Check size={14} /> Use this template
+              <button className="btn-cv h-9 px-4 text-[13px] flex items-center gap-1.5" onClick={() => void applyFilled()} disabled={filling}>
+                <Check size={14} /> {filling ? 'Adding city photo…' : 'Use this template'}
               </button>
             </div>
           </div>

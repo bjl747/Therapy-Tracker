@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { TEMPLATES, BASE_TEMPLATES } from './index'
 import { templateVariants } from './variants'
+import { COLLECTION_JOB_POSTS } from './collection-job-posts'
 
 const FONT_SWAP_KNOWN = new Set([
   'Inter', 'Poppins', 'Montserrat', 'Playfair Display', 'Caveat', 'Bebas Neue', 'Cinzel',
@@ -22,7 +23,8 @@ describe('template variants (v0.17 Wave 2)', () => {
   it('grows the library past 300 (122 originals + 244 variants)', () => {
     expect(BASE_TEMPLATES.length).toBeGreaterThanOrEqual(120)
     expect(TEMPLATES.length).toBeGreaterThanOrEqual(300)
-    expect(TEMPLATES.length).toBe(BASE_TEMPLATES.length * 3)
+    // + the job-post templates, which carry brand colours and get no variants
+    expect(TEMPLATES.length).toBe(BASE_TEMPLATES.length * 3 + COLLECTION_JOB_POSTS.length)
   })
 
   it('has unique slugs across the whole library', () => {

@@ -27,6 +27,7 @@ import { addImageFromSrc, addStockPhoto } from '../add-element'
 import { useStockPhoto } from '@/hooks/use-stock-photo'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
+import { loadCityPhotos, type CityPhoto } from '@/lib/city-photos'
 
 /** stock photo entry — bundled, AI-generated, license-free */
 interface StockPhoto {
@@ -63,32 +64,6 @@ const CATEGORIES = [
   { id: 'abstract', label: 'Abstract' },
   { id: 'cities', label: 'US Cities' },
 ]
-
-/** a bundled US-city photo (public/photos/cities/index.json) — sourced
- *  from Wikimedia Commons under free licences; the credit block rides
- *  on the inserted element exactly like a Pexels/Pixabay result. */
-interface CityPhoto {
-  id: string
-  city: string
-  state: string
-  st: string
-  population: number
-  width: number
-  height: number
-  credit: { provider: string; author: string; license: string; url: string }
-}
-
-let cityCache: Promise<CityPhoto[]> | null = null
-function loadCityPhotos(): Promise<CityPhoto[]> {
-  cityCache ??= fetch('/photos/cities/index.json')
-    .then((r) => (r.ok ? r.json() : []))
-    .then((d) => (Array.isArray(d) ? (d as CityPhoto[]) : []))
-    .catch(() => {
-      cityCache = null
-      return []
-    })
-  return cityCache
-}
 
 function matchCity(p: CityPhoto, q: string): boolean {
   if (!q) return true
