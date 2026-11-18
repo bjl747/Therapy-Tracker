@@ -38,8 +38,9 @@ export function hotJobToFields(j: HotJob): Record<string, string> {
   }
   // job type is locked by the template (e.g. ALLIED TRAVEL) — not taken from the Hot Job
   if (j.weeklyLow) out.weekly_pay = formatMoneyRange(j.weeklyHigh ? `${j.weeklyLow}-${j.weeklyHigh}` : `${j.weeklyLow}`)
-  if (j.hourlyLow) out.wage_low = String(j.hourlyLow)
-  if (j.hourlyHigh) out.wage_high = String(j.hourlyHigh)
+  const hr = (n: number) => (Number.isInteger(Math.round(n * 100) / 100) ? String(Math.round(n)) : n.toFixed(2))
+  if (j.hourlyLow) out.wage_low = hr(j.hourlyLow)
+  if (j.hourlyHigh) out.wage_high = hr(j.hourlyHigh)
   if (j.shift) out.shift = formatShift(j.shift)
   if (j.weeks) out.duration = formatDuration(String(j.weeks))
   if (j.start) out.start_date = j.start
@@ -59,3 +60,11 @@ export const demoHotJobs: JobSource = {
   label: 'Hot Jobs (sample data)',
   list: async () => SAMPLE,
 }
+
+/** Where "From Hot Jobs" reads. The hub plugs in its live Hot Jobs, with the pay range worked out by the Deal Sheet
+ *  (hub-only src/studio/HubStudio.tsx → src/lib/hotJobPay.ts); this repo keeps the sample jobs. */
+let source: JobSource = demoHotJobs
+export const setHotJobSource = (s: JobSource) => {
+  source = s
+}
+export const hotJobSource = () => source
