@@ -12,6 +12,7 @@ import { create } from 'zustand'
 import {
   cloneEl,
   clonePage,
+  isDrawn,
   page as newPage,
   uid,
   type Design,
@@ -24,6 +25,7 @@ import { aabb, alignMoves, distributeMoves, unionRect, type AlignKind } from '..
 const MAX_HISTORY = 120
 
 export type Tool = 'select' | 'hand'
+export type GestureKind = 'pointer' | 'edit'
 
 interface EditorState {
   design: Design | null
@@ -42,6 +44,11 @@ interface EditorState {
   /** read-only (access level 'view') */
   readOnly: boolean
   gestureBase: Design | null
+  /** what kind of gesture is open: 'pointer' = drag / resize / rotate /
+   *  slider scrub (autosave waits for it, undo is ignored during it);
+   *  'edit' = a Fields input or inline text visit (one undo step per visit,
+   *  but autosave keeps saving while you type) */
+  gestureKind: GestureKind | null
 
   load: (d: Design, opts?: { canEditLocked?: boolean; readOnly?: boolean }) => void
   close: () => void
@@ -53,7 +60,7 @@ interface EditorState {
   selectAll: () => void
   setEditingText: (id: string | null) => void
 
-  beginGesture: () => void
+  beginGesture: (kind?: GestureKind) => void
   endGesture: () => void
   /** low-level: replace the design (pushes history unless transient) */
   apply: (fn: (d: Design) => Design, opts?: { transient?: boolean }) => void
@@ -141,6 +148,7 @@ export const useEditor = create<EditorState>((set, get) => {
     canEditLocked: false,
     readOnly: false,
     gestureBase: null,
+    gestureKind: null,
 
     load: (d, opts) =>
       set({
@@ -155,8 +163,9 @@ export const useEditor = create<EditorState>((set, get) => {
         canEditLocked: opts?.canEditLocked ?? false,
         readOnly: opts?.readOnly ?? false,
         gestureBase: null,
+        gestureKind: null,
       }),
-    close: () => set({ design: null, selection: [], past: [], future: [], editingTextId: null }),
+    close: () => set({ design: null, selection: [], past: [], future: [], editingTextId: null, gestureBase: null, gestureKind: null }),
     markSaved: () => set({ dirty: false }),
     setPage: (i) => {
       const d = get().design
@@ -180,14 +189,19 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ selection: next, editingTextId: next.includes(s.editingTextId ?? '') ? s.editingTextId : null })
     },
     selectAll: () => {
-      const p = currentPage(get())
-      if (p) set({ selection: p.elements.filter((e) => !e.hidden).map((e) => e.id) })
+      const s = get()
+      const p = currentPage(s)
+      if (p) set({ selection: p.elements.filter((e) => isDrawn(e, s.design?.fields)).map((e) => e.id) })
     },
     setEditingText: (id) => set({ editingTextId: id }),
 
-    beginGesture: () => {
+    beginGesture: (kind = 'pointer') => {
       const s = get()
-      if (s.design && !s.gestureBase) set({ gestureBase: s.design })
+      if (!s.design) return
+      if (!s.gestureBase) set({ gestureBase: s.design, gestureKind: kind })
+      // a pointer gesture inside an open edit (e.g. a slider while a field is
+      // focused) shares its undo step but must still hold autosave back
+      else if (kind === 'pointer' && s.gestureKind !== 'pointer') set({ gestureKind: 'pointer' })
     },
     endGesture: () => {
       const s = get()
@@ -195,6 +209,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const changed = s.gestureBase !== s.design
       set({
         gestureBase: null,
+        gestureKind: null,
         ...(changed ? { past: [...s.past, s.gestureBase].slice(-MAX_HISTORY), future: [] } : {}),
       })
     },
@@ -380,6 +395,10 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     undo: () => {
+      // never mid-drag: the gesture would later push a stale base (history corruption)
+      if (get().gestureKind === 'pointer') return
+      // a field / inline-text visit counts as done: its edits become the step being undone
+      if (get().gestureBase) get().endGesture()
       const s = get()
       if (!s.past.length || !s.design) return
       const prev = s.past[s.past.length - 1]
@@ -394,6 +413,8 @@ export const useEditor = create<EditorState>((set, get) => {
       })
     },
     redo: () => {
+      if (get().gestureKind === 'pointer') return
+      if (get().gestureBase) get().endGesture()
       const s = get()
       if (!s.future.length || !s.design) return
       const next = s.future[0]

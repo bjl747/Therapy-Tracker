@@ -16,9 +16,10 @@ export const STATE_NAMES: Record<string, string> = {
 export function normPlace(s: string): string {
   return s
     .toLowerCase()
-    .replace(/\bst\.\s*/g, 'saint ')
-    .replace(/\bft\.\s*/g, 'fort ')
-    .replace(/\bmt\.\s*/g, 'mount ')
+    // "St. Paul", "St Paul", "Ft Worth", "Mt Vernon" all normalise the same way
+    .replace(/\bst\.?\s+/g, 'saint ')
+    .replace(/\bft\.?\s+/g, 'fort ')
+    .replace(/\bmt\.?\s+/g, 'mount ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 }

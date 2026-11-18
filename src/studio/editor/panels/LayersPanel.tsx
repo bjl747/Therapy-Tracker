@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, Shapes, Type, Unlock } from 'lucide-react'
-import type { El } from '../../engine/model'
+import { isDrawn, type El } from '../../engine/model'
 import { currentPage, useEditor } from '../store'
 import { elLabel } from '../lint'
 import { patchElRaw, reorderEl } from '../actions'
@@ -13,6 +13,7 @@ const ROW = 38
 export function LayersPanel() {
   const page = useEditor((s) => currentPage(s))
   const fields = useEditor((s) => s.design?.fields)
+  const fieldDefs = useEditor((s) => s.design?.fieldDefs)
   const selection = useEditor((s) => s.selection)
   const canEditLocked = useEditor((s) => s.canEditLocked)
   const readOnly = useEditor((s) => s.readOnly)
@@ -42,6 +43,9 @@ export function LayersPanel() {
           const selected = selection.includes(el.id)
           const lockedOut = readOnly || (!!el.locked && !canEditLocked)
           const Icon = el.type === 'text' ? Type : el.type === 'image' ? ImageIcon : Shapes
+          // conditional row (roundup) switched off: listed, but dimmed and explained
+          const waiting = !el.hidden && !!el.showIf && !isDrawn(el, fields ?? {})
+          const waitingNote = waiting ? `Shown when ${fieldDefs?.find((f) => f.key === el.showIf)?.label ?? el.showIf} is filled` : undefined
           return (
             <div
               key={el.id}
@@ -49,8 +53,9 @@ export function LayersPanel() {
                 'absolute inset-x-0 flex items-center gap-1 rounded-lg pr-1 text-[12.5px]',
                 selected ? 'bg-accent/10 text-ink' : 'text-ink-2 hover:bg-surface-2',
                 drag?.id === el.id && 'opacity-50',
-                el.hidden && 'opacity-60',
+                (el.hidden || waiting) && 'opacity-60',
               )}
+              title={waitingNote}
               style={{ top: i * ROW, height: ROW - 2 }}
               onClick={(e) => useEditor.getState().select([el.id], e.shiftKey || e.metaKey || e.ctrlKey ? 'toggle' : 'replace')}
               onDoubleClick={() => !lockedOut && setRenaming(el.id)}
@@ -98,8 +103,9 @@ export function LayersPanel() {
                   }}
                 />
               ) : (
-                <span className="min-w-0 flex-1 truncate pl-1" title="Double-click to rename">
-                  {elLabel(el, fields)}
+                <span className="flex min-w-0 flex-1 flex-col pl-1 leading-tight" title={waitingNote ?? 'Double-click to rename'}>
+                  <span className="truncate">{elLabel(el, fields)}</span>
+                  {waitingNote && <span className="truncate text-[10.5px] italic text-ink-3">{waitingNote.replace(/^S/, 's')}</span>}
                 </span>
               )}
               <LayerBtn

@@ -7,6 +7,8 @@
 // updates every page and every size live. Nothing is baked in.
 // ─────────────────────────────────────────────────────────────
 
+import { fieldValue } from './fields'
+
 export type Align = 'left' | 'center' | 'right'
 export type VAlign = 'top' | 'middle' | 'bottom'
 
@@ -176,6 +178,18 @@ export interface Design {
 // ── factories ───────────────────────────────────────────────
 
 let n = 0
+/**
+ * Is the element actually drawn? Not hidden, and — for conditional rows
+ * (`showIf`) — its field has a value. The renderer, lint, hit-testing,
+ * marquee, snapping and select-all all use this, so an invisible row can't be
+ * clicked, selected, snapped to or deleted by accident.
+ */
+export function isDrawn(el: Pick<BaseEl, 'hidden' | 'showIf'>, fields?: Record<string, string>): boolean {
+  if (el.hidden) return false
+  if (el.showIf && fields && !fieldValue(fields, el.showIf)?.trim()) return false
+  return true
+}
+
 export function uid(prefix = 'e'): string {
   n = (n + 1) % 1e6
   return `${prefix}${Date.now().toString(36)}${n.toString(36)}${Math.random().toString(36).slice(2, 6)}`

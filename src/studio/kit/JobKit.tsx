@@ -221,7 +221,9 @@ export function JobKit() {
       /* fall through — caption is still pre-filled */
     }
     const url = `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`
-    const w = window.open(url, '_blank', 'noopener')
+    // ('noopener' would make window.open return null even on success)
+    const w = window.open(url, '_blank')
+    if (w) w.opener = null
     if (!w) toast('Allow pop-ups to open LinkedIn', 'Or copy the caption and image with the buttons.', 'error')
     else if (copied) toast('Image copied — press Ctrl+V in the LinkedIn post to attach it')
     else toast('Couldn’t copy the image', 'The caption is filled in — attach the PNG instead.', 'error')
@@ -229,6 +231,7 @@ export function JobKit() {
   }
 
   const downloadOne = async (size: string, kind: 'png' | 'gif') => {
+    if (busy) return
     setBusy(kind === 'gif' ? 'Making GIF…' : 'Rendering…')
     try {
       const { exportPng, downloadBlob } = await import('../export/raster')
@@ -239,24 +242,36 @@ export function JobKit() {
         const { exportGif } = await import('../export/animate')
         downloadBlob(await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }), `${name}.gif`)
       } else downloadBlob(await exportPng(d, 0, { scale: 1, resolveImage }), `${name}.png`)
+    } catch (e) {
+      toast('Download failed', e instanceof Error ? e.message : undefined, 'error')
     } finally {
       setBusy(null)
     }
   }
 
   /** save every chosen size as a design (one kit) and open the one clicked */
+  const opening = useRef(false)
   const openInEditor = async (size: string) => {
-    const kitId = uid('k')
-    let openId = ''
-    for (const s of sizes.includes(size) ? sizes : [...sizes, size]) {
-      const d = instantiate(template, s, fields, {
-        kitId,
-        name: `${fields.job_title || 'Job post'} — ${fields.location || ''} (${SIZES[s as keyof typeof SIZES]?.label ?? s})`,
-      })
-      await repo.saveDesign(d)
-      if (s === size) openId = d.id
+    if (opening.current) return // a double-click must not make two kits
+    opening.current = true
+    try {
+      const kitId = uid('k')
+      let openId = ''
+      for (const s of sizes.includes(size) ? sizes : [...sizes, size]) {
+        const d = instantiate(template, s, fields, {
+          kitId,
+          name: `${fields.job_title || 'Job post'} — ${fields.location || ''} (${SIZES[s as keyof typeof SIZES]?.label ?? s})`,
+        })
+        await repo.saveDesign(d)
+        if (s === size) openId = d.id
+      }
+      rememberJob(fields)
+      nav(`/studio/design/${openId}`)
+    } catch (e) {
+      toast('Couldn’t open the editor', e instanceof Error ? e.message : undefined, 'error')
+    } finally {
+      opening.current = false
     }
-    nav(`/studio/design/${openId}`)
   }
 
   const groups = useMemo(() => {

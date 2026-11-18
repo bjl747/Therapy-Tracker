@@ -10,7 +10,11 @@ OUT = sys.argv[1]
 SUFFIX = re.compile(r"\s+(city and borough|consolidated government \(balance\)|metropolitan government \(balance\)|metro government \(balance\)|unified government \(balance\)|urban county|city \(balance\)|municipality|city|town|village|borough|township|CDP|comunidad|zona urbana)$", re.I)
 
 def norm(s):
-    s = s.lower().replace("st.", "saint").replace("ft.", "fort").replace("mt.", "mount")
+    s = s.lower()
+    # "St. Paul" / "St Paul" / "Ft Worth" / "Mt Vernon" normalise the same way (matches location.ts)
+    s = re.sub(r"\bst\.?\s+", "saint ", s)
+    s = re.sub(r"\bft\.?\s+", "fort ", s)
+    s = re.sub(r"\bmt\.?\s+", "mount ", s)
     return re.sub(r"[^a-z0-9]+", " ", s).strip()
 
 gaz = os.path.join(HERE, "2024_Gaz_place_national.txt")

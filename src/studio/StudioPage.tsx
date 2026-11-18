@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { StudioErrorBoundary } from './ui/ErrorBoundary'
 import { LayoutTemplate, Save, X } from 'lucide-react'
 import { repo } from './data'
 import { useEditor } from './editor/store'
@@ -113,8 +114,10 @@ function TemplateEditBar({ templateId, size, designId }: { templateId: string; s
 }
 
 export function StudioPage() {
+  const { pathname } = useLocation()
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full overflow-auto">
+      <StudioErrorBoundary resetKey={pathname}>
       <Suspense fallback={<Skeleton />}>
         <Routes>
           <Route index element={<StudioHome tab="create" />} />
@@ -126,6 +129,7 @@ export function StudioPage() {
           <Route path="pdf" element={<PdfRoute />} />
         </Routes>
       </Suspense>
+      </StudioErrorBoundary>
       <Toaster />
     </div>
   )

@@ -43,6 +43,7 @@ export const PHOTO_BASE = '/photos/cities'
 export const photoUrl = (id: string) => `${PHOTO_BASE}/${id}.jpg`
 export const thumbUrl = (id: string) => `${PHOTO_BASE}/thumbs/${id}.jpg`
 
+const memo = new Map<string, CityMatch | null>()
 let index: CityPhoto[] | null = null
 let places: Places | null = null
 let loading: Promise<void> | null = null
@@ -53,18 +54,31 @@ export function onCityDataReady(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+let lastFail = 0
+
+/** load the index + places once; a failed load (network blip) is retried later
+ *  instead of being remembered as "no photos" for the whole session */
 export function loadCityData(): Promise<void> {
   if (index && places) return Promise.resolve()
-  loading ??= Promise.all([
-    fetch(`${PHOTO_BASE}/index.json`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-    fetch(`${PHOTO_BASE}/places.json`).then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
-  ]).then(([i, p]) => {
-    index = Array.isArray(i) ? (i as CityPhoto[]) : []
-    places = p && typeof p === 'object' ? (p as Places) : {}
-    listeners.forEach((l) => l())
-  })
+  if (!loading && Date.now() - lastFail < 15_000) return Promise.resolve()
+  const get = (u: string) => fetch(u).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${u}: ${r.status}`))))
+  loading ??= Promise.all([get(`${PHOTO_BASE}/index.json`), get(`${PHOTO_BASE}/places.json`)])
+    .then(([i, p]) => {
+      index = Array.isArray(i) ? (i as CityPhoto[]) : []
+      places = p && typeof p === 'object' ? (p as Places) : {}
+      memo.clear()
+      listeners.forEach((l) => l())
+    })
+    .catch((e) => {
+      console.warn('City photos could not load — will retry', e)
+      lastFail = Date.now()
+      loading = null
+    })
   return loading
 }
+
+/** true once the photo index is available (exports can warn when it isn't) */
+export const cityDataReady = () => !!index && !!places
 
 export function cityIndex(): CityPhoto[] {
   if (!index) void loadCityData()
@@ -128,7 +142,6 @@ export function nearbyCities(location: string, count = 8): CityPhoto[] {
     .map((x) => x.p)
 }
 
-const memo = new Map<string, CityMatch | null>()
 
 /** SYNC lookup for the renderer; null until the data has loaded */
 export function resolveLocation(location: string): CityMatch | null {

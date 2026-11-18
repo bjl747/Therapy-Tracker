@@ -4,7 +4,7 @@
 // downloaded file always match.
 // ─────────────────────────────────────────────────────────────
 
-import type { Anim, Design, El, Gradient, ImageEl, Page, ShapeEl, TextEl } from './model'
+import { isDrawn, type Anim, type Design, type El, type Gradient, type ImageEl, type Page, type ShapeEl, type TextEl } from './model'
 import { resolveText } from './fields'
 import { fontString, layoutText, type TextLayout } from './text'
 import { filtered, getImage, loadImage, sizeOf } from './images'
@@ -337,8 +337,7 @@ function drawText(ctx: Ctx, el: TextEl, design: Design, opts: RenderOptions) {
 }
 
 export function drawElement(ctx: Ctx, el: El, design: Design, opts: RenderOptions, pageDuration: number) {
-  if (el.hidden || opts.skip?.has(el.id)) return
-  if (el.showIf && !design.fields[el.showIf]?.trim()) return
+  if (!isDrawn(el, design.fields) || opts.skip?.has(el.id)) return
   const a = animState(el.anim, opts.time)
   if (a.alpha <= 0) return
   ctx.save()

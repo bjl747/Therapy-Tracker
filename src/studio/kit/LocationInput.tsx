@@ -46,12 +46,12 @@ export function LocationInput({
           setOpen(true)
           setActive(0)
         }}
-        onBlur={() =>
-          setTimeout(() => {
-            setOpen(false)
-            onCommit(value)
-          }, 120)
-        }
+        // commit right away: a delayed commit would overwrite "Clear all" / Recent / Hot Job
+        // picks clicked just after leaving the box (options use mousedown + preventDefault)
+        onBlur={() => {
+          setOpen(false)
+          onCommit(value)
+        }}
         onKeyDown={(e) => {
           if (!list.length) return
           if (e.key === 'ArrowDown') {

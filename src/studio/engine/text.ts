@@ -20,32 +20,37 @@ export function fontString(style: TextStyle, size: number): string {
   return `${style.italic ? 'italic ' : ''}${style.weight} ${size}px ${fam}, "Inter", system-ui, sans-serif`
 }
 
-/** greedy word wrap; words longer than the line are broken by character */
+/** greedy word wrap; any word longer than the line is broken by character */
 export function wrap(text: string, maxW: number, measureLine: (t: string) => number): { text: string; width: number }[] {
   const out: { text: string; width: number }[] = []
+  const push = (t: string) => out.push({ text: t, width: measureLine(t) })
+  /** break an over-long word into full lines; returns the leftover tail */
+  const breakWord = (word: string): string => {
+    let chunk = ''
+    for (const ch of word) {
+      if (chunk && measureLine(chunk + ch) > maxW) {
+        push(chunk)
+        chunk = ch
+      } else chunk += ch
+    }
+    return chunk
+  }
   for (const para of text.split('\n')) {
     const words = para.split(/(\s+)/).filter((w) => w.length > 0)
     let line = ''
-    const push = (t: string) => out.push({ text: t, width: measureLine(t) })
     for (const word of words) {
+      const isSpace = /^\s+$/.test(word)
       const candidate = line + word
       if (!line || measureLine(candidate.trimEnd()) <= maxW) {
-        // a single word wider than the box: break it
-        if (!line && measureLine(word) > maxW && word.trim()) {
-          let chunk = ''
-          for (const ch of word) {
-            if (chunk && measureLine(chunk + ch) > maxW) {
-              push(chunk)
-              chunk = ch
-            } else chunk += ch
-          }
-          line = chunk
-        } else {
-          line = candidate
-        }
+        if (!isSpace && measureLine(line ? candidate.trimEnd() : word) > maxW) {
+          // the word itself doesn't fit on any line: finish this line, then break it
+          if (line.trim()) push(line.trimEnd())
+          line = breakWord(word)
+        } else line = isSpace && !line ? '' : candidate
       } else {
         push(line.trimEnd())
-        line = /^\s+$/.test(word) ? '' : word
+        if (isSpace) line = ''
+        else line = measureLine(word) > maxW ? breakWord(word) : word
       }
     }
     push(line.trimEnd())

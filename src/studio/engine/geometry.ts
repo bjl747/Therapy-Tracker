@@ -1,7 +1,7 @@
 // Geometry: rotated bounds, hit testing, marquee, snapping, align/distribute.
 // Pure — unit tested.
 
-import type { El } from './model'
+import { isDrawn, type El } from './model'
 
 export interface Pt {
   x: number
@@ -61,11 +61,12 @@ export function hitEl(el: El, p: Pt, tol = 0): boolean {
   return q.x >= el.x - t && q.x <= el.x + el.w + t && q.y >= el.y - t && q.y <= el.y + el.h + t
 }
 
-/** topmost visible element under the point */
-export function hitTest(els: El[], p: Pt, tol = 0): El | null {
+/** topmost drawn element under the point (pass the design's fields so
+ *  switched-off `showIf` rows are skipped like the renderer skips them) */
+export function hitTest(els: El[], p: Pt, tol = 0, fields?: Record<string, string>): El | null {
   for (let i = els.length - 1; i >= 0; i--) {
     const el = els[i]
-    if (!el.hidden && hitEl(el, p, tol)) return el
+    if (isDrawn(el, fields) && hitEl(el, p, tol)) return el
   }
   return null
 }

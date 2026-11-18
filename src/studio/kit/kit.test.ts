@@ -129,3 +129,26 @@ describe('template-locked fields', () => {
     expect(useEditor.getState().design!.fields.cta).toBe('CALL NOW')
   })
 })
+
+import { wrap } from '../engine/text'
+describe('wrap breaks long words anywhere on a line', () => {
+  const m = (t: string) => t.length * 10
+  it('second word longer than the box', () => {
+    const lines = wrap('Hi Supercalifragilistic', 100, m)
+    expect(lines.every((l) => l.width <= 100)).toBe(true)
+    expect(lines.map((l) => l.text).join('')).toBe('HiSupercalifragilistic')
+  })
+  it('normal wrapping unchanged', () => {
+    expect(wrap('aaa bbb ccc', 70, m).map((l) => l.text)).toEqual(['aaa bbb', 'ccc'])
+    expect(wrap('a\nb', 100, m).map((l) => l.text)).toEqual(['a', 'b'])
+  })
+})
+
+import { resolveText, missingKeys } from '../engine/fields'
+describe('markers can’t reach object internals', () => {
+  it('{{constructor}} / {{__proto__}} / {{toString}} are just unknown fields', () => {
+    expect(resolveText('Pay {{constructor}}', {})).toBe('Pay ')
+    expect(resolveText('{{toString}}{{__proto__}}', {}, true)).toBe('‹toString›‹__proto__›')
+    expect(missingKeys('{{constructor}} {{job}}', { job: 'RN' })).toEqual(['constructor'])
+  })
+})

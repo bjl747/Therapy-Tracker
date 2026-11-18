@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { flushSync } from 'react-dom'
 import clsx from 'clsx'
 import { Copy, Crop, Lock, MoreHorizontal, Pencil, RotateCw, Trash2, Unlock } from 'lucide-react'
-import { cloneEl, uid, type Design, type El, type ImageEl, type TextEl } from '../engine/model'
+import { cloneEl, isDrawn, uid, type Design, type El, type ImageEl, type TextEl } from '../engine/model'
 import { aabb, hitEl, hitTest, intersects, normRect, resizeEl, rotatePt, snapMove, unionRect, type Guide, type Pt, type Rect } from '../engine/geometry'
 import { clearTextCache, coverRect, drawPage, textLayout } from '../engine/render'
 import { fontString } from '../engine/text'
@@ -310,7 +310,7 @@ export function Stage({ compact }: { compact: boolean }) {
           p0: cur.p,
           base: Object.fromEntries(els.map((e) => [e.id, { x: e.x, y: e.y }])),
           box: unionRect(els.map(aabb))!,
-          others: all.filter((e) => !ids.has(e.id) && !e.hidden).map(aabb),
+          others: all.filter((e) => !ids.has(e.id) && isDrawn(e, useEditor.getState().design?.fields)).map(aabb),
           dup: cur.mods.alt,
         }
         setHover(null)
@@ -347,7 +347,7 @@ export function Stage({ compact }: { compact: boolean }) {
         return
       }
       const crop = useUi.getState().cropId
-      const hit = hitTest(pg.elements, p, 3 / v.zoom)
+      const hit = hitTest(pg.elements, p, 3 / v.zoom, d.fields)
       if (crop) setCursor(hit?.id === crop ? 'grab' : 'default')
       else setCursor(hit && st.selection.includes(hit.id) && !hit.locked && !st.readOnly ? 'move' : 'default')
       setHover(hit && !st.selection.includes(hit.id) ? hit.id : null)
@@ -480,7 +480,7 @@ export function Stage({ compact }: { compact: boolean }) {
       const rect = normRect(cur.p0, p)
       const ids = pg.elements
         .filter((e) => {
-          if (e.hidden) return false
+          if (!isDrawn(e, d.fields)) return false
           const b = aabb(e)
           if (!intersects(b, rect)) return false
           // locked layers (backgrounds) only join when fully enclosed
@@ -568,7 +568,7 @@ export function Stage({ compact }: { compact: boolean }) {
     }
     const tol = (touch ? 10 : 3) / v.zoom
     if (e.button === 2) {
-      const hit = hitTest(pg.elements, p, tol)
+      const hit = hitTest(pg.elements, p, tol, st.design?.fields)
       if (hit && !st.selection.includes(hit.id)) st.select([hit.id])
       else if (!hit) st.select([])
       return
@@ -619,14 +619,14 @@ export function Stage({ compact }: { compact: boolean }) {
         setCursor('grabbing')
       } else {
         const ids = new Set(sel.map((x) => x.id))
-        const t = snapTargets(pg.elements.filter((x) => !ids.has(x.id) && !x.hidden).map(aabb), st.design!)
+        const t = snapTargets(pg.elements.filter((x) => !ids.has(x.id) && isDrawn(x, st.design?.fields)).map(aabb), st.design!)
         g.current = { k: 'resize', handle: h, frame0: f0, els0: sel, xs: t.xs, ys: t.ys }
         setHud({ ...NO_HUD, mode: 'resize' })
       }
       return
     }
 
-    let hit = hitTest(pg.elements, p, tol)
+    let hit = hitTest(pg.elements, p, tol, st.design?.fields)
     // inside a multi-selection's box but between its members: still drags the selection
     if (!hit && sel.length > 1) {
       const f0 = frameOf(sel)!

@@ -1,7 +1,7 @@
 // "Ready to post" checks (pure). The editor passes the renderer's real
 // measure function; tests pass a fake one.
 
-import type { Design, El, Page, TextEl } from '../engine/model'
+import { isDrawn, type Design, type El, type Page, type TextEl } from '../engine/model'
 import { missingKeys, resolveText } from '../engine/fields'
 import { aabb, hitEl, type Rect } from '../engine/geometry'
 import { layoutText, type Measure } from '../engine/text'
@@ -45,13 +45,13 @@ const fullyOutside = (r: Rect, page: { w: number; h: number }) =>
  * solid shape under its centre, else the page. null = unknown (a photo or a
  * translucent layer is behind it) → the contrast check is skipped.
  */
-export function backdropColor(page: Page, el: TextEl): string | null {
+export function backdropColor(page: Page, el: TextEl, fields?: Record<string, string>): string | null {
   if (el.bg && (parseColor(el.bg.color)?.a ?? 0) > 0.9) return el.bg.color
   const c = { x: el.x + el.w / 2, y: el.y + el.h / 2 }
   const idx = page.elements.findIndex((e) => e.id === el.id)
   for (let i = idx - 1; i >= 0; i--) {
     const under = page.elements[i]
-    if (under.hidden || under.opacity < 0.05 || !hitEl(under, c)) continue
+    if (!isDrawn(under, fields) || under.opacity < 0.05 || !hitEl(under, c)) continue
     if (under.type === 'image') return null
     if (under.type === 'text') continue
     if (under.shape === 'line' || under.shape === 'path' || under.shape === 'star' || under.shape === 'triangle') continue
@@ -74,9 +74,8 @@ export function lintPage(design: Design, pageIndex: number, measure: Measure): L
     out.push({ key: `${pageIndex}:${el.id}:${kind}`, kind, severity, pageIndex, elId: el.id, label: elLabel(el, design.fields), message })
 
   for (const el of page.elements) {
-    if (el.hidden) continue
-    // conditional rows (roundups) that are switched off aren't drawn — nothing to check
-    if (el.showIf && !design.fields[el.showIf]?.trim()) continue
+    // hidden layers and switched-off conditional rows (roundups) aren't drawn — nothing to check
+    if (!isDrawn(el, design.fields)) continue
     const box = aabb(el)
     if (fullyOutside(box, design)) {
       add(el, 'outside', 'warn', 'Is completely off the page and will not appear')
@@ -101,7 +100,7 @@ export function lintPage(design: Design, pageIndex: number, measure: Measure): L
     const px = l.size * (1080 / design.w)
     if (px < MIN_TEXT_PX) add(el, 'small', 'warn', `Text is very small (${Math.round(l.size)}px) — hard to read on a phone`)
 
-    const bg = backdropColor(page, el)
+    const bg = backdropColor(page, el, design.fields)
     const ratio = bg ? contrastRatio(el.color, bg) : null
     if (ratio !== null && ratio < MIN_CONTRAST && !el.stroke && !el.shadow)
       add(el, 'contrast', 'warn', `Low contrast against the background (${ratio.toFixed(1)}:1)`)
