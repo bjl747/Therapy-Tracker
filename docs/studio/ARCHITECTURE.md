@@ -36,8 +36,9 @@ src/
     pdf/                  PDF Studio (pdf.js + pdf-lib): merge, reorder, sign, redact, forms
     data/                 StudioRepo interface; IndexedDB (demo) now, Firestore in the hub
       firestoreRepo.ts    ready-made Firestore + Storage implementation (makeFirestoreRepo)
+      imageFile.ts        decode any uploaded image incl. SVG (→ PNG)
     home/                 Studio home (Create · My designs · Brand)
-    ui/                   DesignCanvas (live preview), toast
+    ui/                   DesignCanvas (live preview), toast, ErrorBoundary (crash → "Back to Studio")
   (everything else in src/ is a HUB SHIM — stand-ins for the hub's own files)
 public/
   photos/cities/          ~800 city photos + index.json + places.json (scripts/city-photos)

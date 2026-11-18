@@ -1,14 +1,16 @@
 # Studio — build & critique log
 
 ## Next up
-- Editor (Fable agent) — integrate, test drag/resize/rotate/text edit, phone layout.
-- City photos: replace montage/collage images (28 named *montage/collage*, maybe more) with a
-  single photo (Wikipedia lead image or another Wikidata image); finish 429-throttled downloads.
-- Job Kit on phone: previews sit below a long form — add a compact live preview at the top.
-- PDF Studio: add a back link to Studio home.
-- Colour styles for job posts (Light / Bold) once BJ sends transparent logos (current
-  placeholders have a navy box baked in, so only navy backgrounds work).
-- GIF export holds all frames in memory (~186 MB at 1080², 40 frames) — stream frames to the worker.
+- **City photos** — only 33 of 817 downloaded (Wikimedia blocks this cloud machine). Run
+  `scripts/city-photos/download.py` then `places.py` and `focus.py` from a normal connection
+  (README in that folder). Until then far-away or placeholder photos appear.
+- **From BJ:** original transparent logos (GQR, UnitiMed, BluePipes badge); GQR brand font
+  names (gqr.com blocked automated checks); Hot Jobs field list + Pay Intel hookup; any other
+  sizes/brands the team posts.
+- Colour styles (Light/Bold) for job posts once transparent logos arrive.
+- Hub migration (skill `studio-hub-migration`): wire `firestoreRepo` + rules, test in a dev project.
+- GIF export holds all frames in memory (~186 MB at 1080², 40 frames) — stream to the worker.
+- Mockups for BJ to compare: `docs/studio/mockups/studio-options.html` (Option A is what's built).
 
 ## 2026-11-18 — Night 1: rebuild from Canvix
 - Moved Canvix to `legacy/canvix/`; new Vite app on the hub stack with hub shims.
