@@ -21,6 +21,8 @@ with open(os.path.join(HERE, "2024_Gaz_place_national.txt"), encoding="latin-1")
         st, name = r[0].strip(), SUFFIX.sub("", r[3].strip())
         lat, lon = round(float(r[10]), 3), round(float(r[11].strip()), 3)
         keys = {norm(name)}
+        if name.endswith(" City") and name not in ("Carson City", "Jefferson City", "Oklahoma City", "Salt Lake City", "Kansas City", "New York City", "Atlantic City", "Panama City", "Rapid City", "Sioux City", "Bay City", "Iowa City", "Lake Havasu City"):
+            keys.add(norm(name[:-5]))  # "Boise City" → "boise"
         for part in re.split(r"[-/]", name):
             keys.add(norm(part))
         for k in keys:

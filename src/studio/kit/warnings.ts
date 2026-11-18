@@ -2,6 +2,8 @@
 import type { Design } from '../engine/model'
 import { resolveText, missingKeys } from '../engine/fields'
 import { textLayout } from '../engine/render'
+import { resolveImage } from '../services'
+import { cityIndex } from '../photos/cities'
 
 export interface KitWarning {
   level: 'warn' | 'error'
@@ -13,6 +15,10 @@ export function kitWarnings(d: Design): KitWarning[] {
   const missing = new Set<string>()
   for (const p of d.pages)
     for (const el of p.elements) {
+      if (el.type === 'image' && el.bind && !el.hidden && cityIndex().length > 0 && d.fields[el.bind]?.trim() && !resolveImage(el, d.fields)) {
+        out.push({ level: 'warn', text: 'No city photo for this location yet — pick one with “Change”' })
+        continue
+      }
       if (el.type !== 'text' || el.hidden) continue
       missingKeys(el.text, d.fields).forEach((k) => missing.add(k))
       const t = resolveText(el.text, d.fields)

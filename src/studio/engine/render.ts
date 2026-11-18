@@ -252,8 +252,14 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
   ctx.clip()
   if (!raw) {
     if (src) void loadImage(src)
-    // placeholder while loading / when empty
-    ctx.fillStyle = '#CBD2E6'
+    // placeholder while loading / when empty. A bound photo with no match
+    // gets a quiet brand-toned backdrop instead of a grey box.
+    if (el.bind) {
+      const g = ctx.createLinearGradient(0, 0, w, h)
+      g.addColorStop(0, '#1B2A6B')
+      g.addColorStop(1, '#2940DA')
+      ctx.fillStyle = g
+    } else ctx.fillStyle = '#CBD2E6'
     ctx.fillRect(0, 0, w, h)
     ctx.restore()
     return

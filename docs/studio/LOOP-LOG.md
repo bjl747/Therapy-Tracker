@@ -36,3 +36,19 @@
 - Found: some Wikipedia city images are collages (e.g. Huntsville) — queued.
 - Found: nearest photo can be far away while the library is incomplete (expected; resolves when
   downloads finish).
+
+### Critique round 3 (editor landed; full workflow test: kit → download → editor)
+- Editor (Fable agent): canvas + overlay, snapping, rotate/resize, inline text, photo re-framing,
+  panels, lint, preview, exports; 145 tests. Reviewed screenshots at desktop/phone/ultrawide.
+- Kit → ZIP → editor works end to end with no errors (~1.5 s for a whole kit).
+- Fixed: very long titles shrank to 52 % → title boxes now allow two lines (bottom-aligned) in
+  square/portrait/landscape; km vs mi mismatch → miles everywhere; ZIP names were cut at 40 chars.
+- Fixed: animated GIF was 10 MB (moving photo changes every pixel) → 600 px, 12 fps, photo held
+  still in GIFs, 3 s hold on the final frame → ~0.5–0.75 MB.
+
+### Critique round 4 (batch paste with messy data)
+- 3 pasted rows with odd headers ("Position", "City, State", "Weekly Gross"), "Boise ID" without
+  comma, "St. Louis, Missouri", "$2,650 to $2,890", "8 wks" → all tidied correctly.
+- Fixed: Boise got a grey box — Census calls it "Boise City" (alias added), and states with no
+  downloaded photo now borrow the nearest city's photo. Bound photos with no match draw a brand
+  gradient instead of grey, and the kit warns before download.

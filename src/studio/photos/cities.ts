@@ -98,7 +98,16 @@ export function matchLocation(location: string, photos: CityPhoto[], pl: Places)
     if (best) return { photo: best.p, kind: 'nearby', distanceKm: Math.round(best.d) }
   }
   const biggest = [...inState].sort((a, b) => b.population - a.population)[0]
-  return biggest ? { photo: biggest, kind: 'state' } : null
+  if (biggest) return { photo: biggest, kind: 'state' }
+  // no photo in this state at all: nearest city to the state's centre
+  const pts = Object.values(pl[loc.st] ?? {})
+  if (!pts.length) return null
+  const centre: [number, number] = [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
+  const near = photos
+    .filter((p) => p.lat !== undefined && p.lon !== undefined)
+    .map((p) => ({ p, d: distanceKm(here ?? centre, [p.lat!, p.lon!]) }))
+    .sort((a, b) => a.d - b.d)[0]
+  return near ? { photo: near.p, kind: 'nearby', distanceKm: Math.round(near.d) } : null
 }
 
 /** nearest few candidates (for the "other photos near here" picker) */
