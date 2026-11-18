@@ -13,7 +13,14 @@ describe('safeFileName', () => {
     expect(safeFileName('CON')).toBe('design')
   })
   it('keeps unicode and limits length', () => {
-    expect(safeFileName('Café 名前')).toBe('Café 名前')
+    expect(safeFileName('Café 名前')).toBe('Cafe')
     expect(safeFileName('a'.repeat(200)).length).toBe(80)
+  })
+})
+
+describe('safeFileName — browser-safe ASCII', () => {
+  it('turns dashes and accents into plain ASCII', () => {
+    expect(safeFileName('Pharmacist — Fishersville, VA (Square post)')).toBe('Pharmacist - Fishersville, VA (Square post)')
+    expect(safeFileName('Café – Niño')).toBe('Cafe - Nino')
   })
 })

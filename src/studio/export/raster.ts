@@ -68,7 +68,13 @@ export function downloadBlob(blob: Blob, filename: string): void {
 /** a filesystem-safe file stem (no extension); never empty */
 export function safeFileName(s: string, fallback = 'design'): string {
   const cleaned = s
-    .normalize('NFKC')
+    // Chrome throws away a download name containing some non-ASCII (e.g. an
+    // em dash) and saves as "download" — so dashes become "-" and accents go.
+    .replace(/[\u2012-\u2015\u2212]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, '')
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, ' ')
     .replace(/\s+/g, ' ')

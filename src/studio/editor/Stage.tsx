@@ -835,7 +835,7 @@ export function Stage({ compact }: { compact: boolean }) {
   const busy = hud.mode !== null
   const showChrome = !busy && !editingEl && !cropEl
   const selBox = frame ? aabb(frame) : null
-  const lockEls = [...selEls, ...(hoverEl ? [hoverEl] : [])].filter((e) => e.locked)
+  const lockEls = [...selEls, ...(hoverEl && !selEls.some((s) => s.id === hoverEl.id) ? [hoverEl] : [])].filter((e) => e.locked)
 
   const stageCursor = hud.mode === 'pan' ? 'grabbing' : tool === 'hand' || space ? (hud.mode ? 'grabbing' : 'grab') : hud.mode === 'move' ? 'move' : cursor
 

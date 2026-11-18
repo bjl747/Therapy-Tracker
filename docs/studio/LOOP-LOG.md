@@ -52,3 +52,12 @@
 - Fixed: Boise got a grey box — Census calls it "Boise City" (alias added), and states with no
   downloaded photo now borrow the nearest city's photo. Bound photos with no match draw a brand
   gradient instead of grey, and the kit warns before download.
+
+### Critique round 5 (using the editor like a person)
+- Open a kit design → drag, click text, undo, export PNG via the Download popover — works.
+- Locked brand pieces (badge/logos) start a marquee instead of moving — intended (managers unlock first).
+- Clicking a field-driven text (e.g. location) jumps to that field in the Job details panel — good.
+- Fixed: downloads were saved as "download" — Chrome drops names with non-ASCII (our "—");
+  `safeFileName` now makes names plain ASCII.
+- Fixed: React duplicate-key warning (lock badge listed twice when a locked element was both
+  selected and hovered).
