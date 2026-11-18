@@ -39,7 +39,7 @@ import { currentPage, useEditor } from './store'
 import { useUi } from './uiStore'
 import { useSelected } from './hooks'
 import { elLabel } from './lint'
-import { toast } from './actions'
+import { toast, uploadError } from './actions'
 import { parseColor } from './colors'
 import { ColorField, IconBtn, NumField, PopButton, Row, Section, Seg, SliderNum, Toggle } from './ui'
 
@@ -425,10 +425,10 @@ function ImageSection({ els, patchAll }: { els: ImageEl[]; patchAll: (fn: (e: El
   const replace = async (fl: File | undefined) => {
     if (!fl) return
     try {
-      const a = await repo.uploadAsset(fl, 'photo')
+      const a = await repo.uploadImage(fl)
       img(() => ({ src: a.url, bind: undefined, credit: undefined, focus: { x: 0.5, y: 0.5 }, zoom: 1 }))
-    } catch {
-      toast('That image could not be read')
+    } catch (e) {
+      toast(uploadError(e))
     }
   }
   const sameDuo = (p: [string, string] | null) => (p === null ? !f.duotone : !!f.duotone && f.duotone[0] === p[0] && f.duotone[1] === p[1])
