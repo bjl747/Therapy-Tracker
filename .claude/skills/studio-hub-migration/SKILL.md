@@ -65,3 +65,30 @@ components/) — those are shims that imitate the hub.
 ## Check after moving
 `npx tsc -b`, `npm run build`, demo mode (`VITE_HUB_DEMO=true`) works with no login,
 light + dark, phone width, PDF Studio loads its worker (Vite `?url` import).
+
+## Status (2026-11-18): in the hub, admins only, browser storage
+Studio was copied into the hub (`src/studio`, minus `*.test.ts`) and deployed as `/studio`, admins only
+(feature `studio`, None for every other role). It still uses `localRepo` (IndexedDB): nothing goes to Firebase.
+
+Hub-side pieces that are NOT in this repo (keep them when re-copying `src/studio`):
+- `src/studio/HubStudio.tsx`: cancels `<main>`'s padding, height `calc(100dvh - var(--hdr) + 0.25rem)`, adds `studio-root`.
+- `src/index.css`: a `:where(.studio-root)` block re-creating this repo's `.btn` / `.btn-primary` / `.chip` / `.chip-on` /
+  `.input` / `.card-accent` / `.eyebrow` (the hub's `.btn` is borderless and differently sized). `:where()` keeps the
+  weight equal to a plain class, so Tailwind utilities on the same element still win, as here.
+- Touch points done: `types.ts`, `access.ts`, `routes.ts` (`studio` loader → `HubStudio`), `nav.ts` (Resources), `App.tsx`.
+- `public/pdfjs/` (also in this repo now), `public/fonts/*.woff2`, `public/brand/*.png`, `public/photos/cities/`.
+
+Before switching on `firestoreRepo` (code review 2026-11-18; fixed already: `loadStorage` shape, no `fetch(data:)`
+(CSP), undefined stripped, thumbnails under the saver's uid):
+- **Recruiter photo uploads** go through `uploadAsset` → `studio/assets/**` + `hub_studio/assets` (admin/manager only):
+  recruiters would be refused and every photo would become a brand asset. Add `uploadImage` → `studio/{uid}/img/…`.
+  Needs BJ's OK: the hub's standing rule is "no uploads into the hub".
+- **Rules draft above has holes:** the general `hub_studio/{kind}/rows/{id}` also matches templates/assets (rules OR
+  together), so any editor could create a template; managers could edit templates/assets; any active user can read
+  every design; update doesn't pin `ownerUid`. Limit the general match to `kind in ['designs','summaries']`, owner or
+  manager/AM/admin read, and `request.resource.data.ownerUid == resource.data.ownerUid` on update.
+- Duplicate / Undo-delete keep the original `ownerUid` → a manager duplicating a recruiter's design is refused.
+- Orphaned Storage files (delete never removes them; every autosave re-uploads data: images under a new name);
+  SVG uploads stored raw (convert to PNG as `fileToDataUrl` does); Discard of a template draft can be undone by the
+  editor's unmount flush.
+- Test against a real dev project or the emulator first; it has never run.

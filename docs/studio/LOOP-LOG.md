@@ -1,9 +1,10 @@
 # Studio — build & critique log
 
 ## Next up
-- **City photos** — only 33 of 817 downloaded (Wikimedia blocks this cloud machine). Run
-  `scripts/city-photos/download.py` then `places.py` and `focus.py` from a normal connection
-  (README in that folder). Until then far-away or placeholder photos appear.
+- **In the hub (2026-11-18):** deployed as `/studio`, admins only, browser storage. To make it team-wide, wire
+  `firestoreRepo` (open items in `.claude/skills/studio-hub-migration` → Status) after BJ's OK on uploads.
+- **City photos** — finished from BJ's Mac on 2026-11-18 (branch `city-photos`). Some Wikipedia photos are collages
+  (e.g. Peoria, AZ, Huntsville, AL): swap them with `fix_montages.py`.
 - **From BJ:** original transparent logos (GQR, UnitiMed, BluePipes badge); GQR brand font
   names (gqr.com blocked automated checks); Hot Jobs field list + Pay Intel hookup; any other
   sizes/brands the team posts.

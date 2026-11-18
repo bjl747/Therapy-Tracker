@@ -31,7 +31,7 @@ export function useExporter() {
           onProgress: (done, total) => setBusy({ label: parts.length > 1 ? `${label} (${i + 1}/${parts.length})` : label, done, total }),
         })
         res.warnings.forEach((w) => st.notify('info', w))
-        downloadBlob(res.bytes, `${part.name}.pdf`, 'application/pdf')
+        downloadBlob(res.bytes as BlobPart, `${part.name}.pdf`, 'application/pdf') // pdf-lib output is ArrayBuffer-backed
         if (i < parts.length - 1) await sleep(400)
       }
     } catch (err) {

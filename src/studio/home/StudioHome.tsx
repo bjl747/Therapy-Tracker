@@ -120,7 +120,7 @@ function CreateTab() {
           <div key={tpl.id} className="min-w-0 mb-4 last:mb-0">
             <div className="flex items-baseline gap-2 mb-2 min-w-0">
               <div className="text-[13.5px] font-bold whitespace-nowrap">{tpl.name}</div>
-              <div className="text-[12px] text-ink-3 truncate">{tpl.description}</div>
+              <div className="text-[12px] text-ink-3 truncate" title={tpl.description}>{tpl.description}</div>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {Object.keys(tpl.layouts).map((size) => {
@@ -131,7 +131,7 @@ function CreateTab() {
                     <div className="rounded-lg overflow-hidden ring-1 ring-black/5 shadow-sm group-hover:ring-accent/60 transition">
                       <DesignCanvas design={d} width={Math.round((h * d.w) / d.h)} />
                     </div>
-                    <div className="text-[11.5px] font-semibold text-ink-2 mt-1">{SIZES[size as SizeKey]?.label ?? size}</div>
+                    <div className="text-[11.5px] font-semibold text-ink-2 mt-1 truncate" title={SIZES[size as SizeKey]?.label ?? size}>{SIZES[size as SizeKey]?.label ?? size}</div>
                   </button>
                 )
               })}
@@ -156,7 +156,7 @@ function CreateTab() {
                   <span className="block bg-accent/15 border border-accent/40 rounded-[3px]" style={{ width: r >= 1 ? 40 : 40 * r, height: r >= 1 ? 40 / r : 40 }} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[12.5px] font-bold truncate">{s.label}</span>
+                  <span className="block text-[12.5px] font-bold truncate" title={s.label}>{s.label}</span>
                   <span className="block text-[11px] text-ink-3 tabular-nums">{s.w}×{s.h}</span>
                 </span>
               </button>

@@ -606,7 +606,7 @@ function PreviewCard({
     <div className="card p-3 min-w-0 flex flex-col">
       <div className="flex items-baseline justify-between gap-2 mb-2 min-w-0">
         <div className="text-[13px] font-bold whitespace-nowrap">{label}</div>
-        <div className="text-[11px] text-ink-3 truncate tabular-nums">
+        <div className="text-[11px] text-ink-3 truncate tabular-nums" title={`${design.w}×${design.h} · ${hint}`}>
           {design.w}×{design.h} · {hint}
         </div>
       </div>
