@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
+  ArrowLeft,
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpToLine,
@@ -59,7 +60,7 @@ function TB({ icon, label, onClick, disabled, primary, showLabel, title }: TBPro
   )
 }
 
-export function PdfStudio() {
+export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
   const pages = usePdfStudio((s) => s.pages)
   const sel = usePdfStudio((s) => s.sel)
   const loading = usePdfStudio((s) => s.loading)
@@ -167,12 +168,19 @@ export function PdfStudio() {
       />
 
       <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex items-start gap-2">
+          {onBack && (
+            <button className="btn mt-1 shrink-0" onClick={onBack} aria-label="Back to Studio">
+              <ArrowLeft size={15} />
+            </button>
+          )}
+          <div className="min-w-0">
           <div className="eyebrow">PDF Studio</div>
           <h1 className="text-xl font-bold text-ink">Combine, edit and export PDFs</h1>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-3">
             <Lock size={12} className="shrink-0" /> Files are processed in your browser. Nothing is uploaded.
           </p>
+          </div>
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:w-64 sm:flex-none">

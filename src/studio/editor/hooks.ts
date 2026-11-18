@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { El } from '../engine/model'
+import { currentPage, useEditor } from './store'
 import { cityIndex, loadCityData, onCityDataReady } from '../photos/cities'
 import { onImageLoaded } from '../engine/images'
 import { clearTextCache } from '../engine/render'
@@ -57,4 +59,11 @@ export function useWidth(el: HTMLElement | null): number {
     return () => ro.disconnect()
   }, [el])
   return w
+}
+
+/** selected elements on the current page (stable between unrelated store changes) */
+export function useSelected(): El[] {
+  const page = useEditor((s) => currentPage(s))
+  const selection = useEditor((s) => s.selection)
+  return useMemo(() => (page ? page.elements.filter((e) => selection.includes(e.id)) : []), [page, selection])
 }

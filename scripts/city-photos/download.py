@@ -3,7 +3,7 @@ import io, json, os, re, sys, time, unicodedata, urllib.request
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = sys.argv[1]  # .../public/photos/cities
+OUT = sys.argv[1] if len(sys.argv) > 1 else "."  # .../public/photos/cities
 UA = "CanvaTwoCityPhotos/1.0 (https://github.com/mir-ashiq/canvix)"
 ABBR = {"Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE","District of Columbia":"DC","Florida":"FL","Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA","Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD","Massachusetts":"MA","Michigan":"MI","Minnesota":"MN","Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH","New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA","Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT","Vermont":"VT","Virginia":"VA","Washington":"WA","West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY"}
 FREE = re.compile(r"^(CC0|CC BY|CC-BY|Public domain|PD|GFDL|FAL|Attribution|No restrictions)", re.I)
@@ -17,7 +17,7 @@ def fetch(url):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=40) as r:
                 data = r.read()
-            time.sleep(1.0)
+            time.sleep(2.0)
             return data
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504):
@@ -27,6 +27,23 @@ def fetch(url):
                 continue
             raise
     raise RuntimeError("gave up " + url)
+
+STANDARD = [250, 330, 500, 960, 1280]
+
+def thumb_url(img):
+    """Wikimedia only serves standard thumbnail widths quickly; originals and
+    odd sizes get rate-limited (429). Pick the largest standard width <= the
+    original and build the /thumb/ URL ourselves."""
+    u = img["thumb"].split("?")[0]
+    if "/thumb/" in u:
+        return u
+    w = img.get("width") or 1280
+    size = max([s for s in STANDARD if s < w] or [250])
+    base = u.replace("/wikipedia/commons/", "/wikipedia/commons/thumb/", 1)
+    name = u.rsplit("/", 1)[1]
+    ext = name.rsplit(".", 1)[-1].lower()
+    suffix = ".png" if ext in ("svg",) else (".jpg" if ext in ("tif", "tiff") else "")
+    return f"{base}/{size}px-{name}{suffix}"
 
 def main():
     cs = json.load(open(os.path.join(HERE, "meta.json")))
@@ -48,7 +65,7 @@ def main():
         full = os.path.join(OUT, sid + ".jpg")
         try:
             if not os.path.exists(full):
-                im = Image.open(io.BytesIO(fetch(img["thumb"])))
+                im = Image.open(io.BytesIO(fetch(thumb_url(img))))
                 im = im.convert("RGB")
                 im.thumbnail((1280, 1280))
                 im.save(full, "JPEG", quality=76, optimize=True, progressive=True)

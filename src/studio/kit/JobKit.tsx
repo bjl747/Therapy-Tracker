@@ -90,6 +90,7 @@ export function JobKit() {
   const [busy, setBusy] = useState<string | null>(null)
   const [photoPicker, setPhotoPicker] = useState(false)
   const [hotOpen, setHotOpen] = useState(false)
+  const previewsRef = useRef<HTMLElement>(null)
   useAssetTick()
 
   useEffect(() => {
@@ -200,6 +201,22 @@ export function JobKit() {
         <BatchMode template={template} sizes={sizes} gif={gif} onPick={(f) => { setFields(f); setMode('one') }} />
       ) : (
         <div className="grid gap-4 px-4 md:px-6 pb-6 min-h-0 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)_380px]">
+          {/* ── phone: live mini preview that follows you while you type ── */}
+          {sizes[0] && (
+            <button
+              className="lg:hidden sticky top-0 z-10 card bg-surface-1/95 p-2 flex items-center gap-3 text-left"
+              onClick={() => previewsRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <span className="shrink-0 rounded-md overflow-hidden ring-1 ring-black/5">
+                <DesignCanvas design={designs[sizes[0]]} width={64} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[12.5px] font-bold truncate">Live preview</span>
+                <span className="block text-[11.5px] text-ink-3 truncate">Updates as you type · tap to see all {sizes.length} sizes</span>
+              </span>
+            </button>
+          )}
+
           {/* ── job details ── */}
           <section className="card card-accent p-4 min-w-0 self-start lg:sticky lg:top-4">
             <div className="flex items-center justify-between mb-2">
@@ -253,7 +270,7 @@ export function JobKit() {
           </section>
 
           {/* ── previews ── */}
-          <section className="min-w-0">
+          <section className="min-w-0 scroll-mt-20" ref={previewsRef}>
             <div className="flex flex-wrap items-center gap-1.5 mb-3">
               <span className="eyebrow mr-1">Sizes</span>
               {KIT_SIZES.map((s) => (
