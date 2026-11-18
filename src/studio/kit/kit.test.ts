@@ -148,7 +148,7 @@ import { resolveText, missingKeys } from '../engine/fields'
 describe('markers can’t reach object internals', () => {
   it('{{constructor}} / {{__proto__}} / {{toString}} are just unknown fields', () => {
     expect(resolveText('Pay {{constructor}}', {})).toBe('Pay ')
-    expect(resolveText('{{toString}}{{__proto__}}', {}, true)).toBe('‹toString›‹__proto__›')
+    expect(resolveText('{{toString}}{{__proto__}}', {}, true)).toBe('‹toString›{{__proto__}}') // not a valid key → left as typed
     expect(missingKeys('{{constructor}} {{job}}', { job: 'RN' })).toEqual(['constructor'])
   })
 })
