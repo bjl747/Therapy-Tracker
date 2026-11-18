@@ -15,13 +15,15 @@ def slug(s):
 def fetch(url):
     for _ in range(10):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=90) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=40) as r:
                 data = r.read()
             time.sleep(1.0)
             return data
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504):
-                time.sleep(int(e.headers.get("Retry-After") or 30) + 5)
+                wait = min(60, int(e.headers.get("Retry-After") or 20) + 3)
+                print("  wait", e.code, wait, flush=True)
+                time.sleep(wait)
                 continue
             raise
     raise RuntimeError("gave up " + url)
@@ -49,7 +51,7 @@ def main():
                 im = Image.open(io.BytesIO(fetch(img["thumb"])))
                 im = im.convert("RGB")
                 im.thumbnail((1280, 1280))
-                im.save(full, "JPEG", quality=80, optimize=True, progressive=True)
+                im.save(full, "JPEG", quality=76, optimize=True, progressive=True)
                 t = im.copy(); t.thumbnail((400, 400))
                 t.save(os.path.join(OUT, "thumbs", sid + ".jpg"), "JPEG", quality=70, optimize=True)
             w, h = Image.open(full).size
@@ -63,8 +65,7 @@ def main():
             "credit": {"provider": "Wikimedia Commons", "author": author,
                        "license": img.get("license") or "", "url": img.get("page") or ""},
         })
-        if i % 25 == 0:
-            print(i, sid, flush=True)
+        print(i, sid, flush=True)
     manifest.sort(key=lambda m: -m["population"])
     json.dump(manifest, open(os.path.join(OUT, "index.json"), "w"), separators=(",", ":"))
     json.dump(missing, open(os.path.join(HERE, "missing.json"), "w"), indent=1)
