@@ -33,7 +33,11 @@ components/) — those are shims that imitate the hub.
      allow update, delete: if hubManager() || resource.data.ownerUid == request.auth.uid;
    }
    ```
-   (templates/assets writes: restrict to `hubManager()`.) Recruiters list only their own
+   Templates and brand assets are ADMIN-only writes (BJ's rule):
+   ```
+   match /hub_studio/templates/rows/{id} { allow read: if hubActive(); allow write: if hubAdmin(); }
+   match /hub_studio/assets/rows/{id}    { allow read: if hubActive(); allow write: if hubAdmin(); }
+   ``` Recruiters list only their own
    designs (query `where('ownerUid','==',uid)`); managers/AMs/admins list all.
    Storage rules: `studio/{uid}/**` write by owner, `studio/assets/**` write by managers,
    read by any active hub user; images only, ≤ 15 MB.
@@ -47,6 +51,12 @@ components/) — those are shims that imitate the hub.
   (needs the auth context — simplest is a small `useRepo()` hook, or set it once after sign-in).
 - Firestore index needed: `hub_studio/summaries/rows` on `ownerUid ASC, updatedAt DESC`.
 - `onSnapshot` listeners for live lists; no offline cache (BJ's choice).
+
+## Roles inside Studio
+- **Admins**: Templates tab (locked values, fields, every size's design, new/copy/delete/reset),
+  brand uploads, can move/edit brand-locked elements and locked fields (`canEditLocked`).
+- **Everyone else** (managers, AMs, recruiters): use templates; locked pieces and locked fields
+  can't be changed. The demo shim has a "View as" role switch in the sidebar for testing.
 
 ## Swap shims for hub pieces
 - `src/studio/ui/toast.tsx` → can forward to the hub Toast context (keep the call shape).

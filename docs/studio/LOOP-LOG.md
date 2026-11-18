@@ -106,3 +106,14 @@
   `instantiate`, refused by the editor store for non-managers) + tests.
 - City photos: 25 collage images swapped for single photos (`fix_montages.py`); `meta.json`
   shipped so the download can be finished from any normal connection.
+
+### BJ feedback — admins own templates
+- Admin-only **Templates** tab: locked values ("settings") for everyone, field editor (label,
+  default, type, group, lock/unlock, order, add/remove), sizes (add/remove, default), **Edit
+  design** opens the editor in template mode with a "Save to template" bar, new template (blank or
+  copy), duplicate, delete with undo, reset built-ins to original.
+- Job Kit and home read the live library (template picker appears when there's more than one).
+- Only admins can move/edit brand-locked pieces and locked fields; brand uploads are admin-only.
+- Demo sidebar "View as" role switch to preview recruiter vs. admin.
+- Bug caught by the e2e test and fixed: Job Kit re-render loop (template objects rebuilt each
+  render) → memoised library + stable effect deps.

@@ -5,6 +5,13 @@ description: How to author or change Studio templates (template families with fi
 
 # Authoring Studio templates
 
+**Admins do this in the app** (Studio → Templates (admin)): change locked values, edit fields
+(label, default, type, group, lock), add/remove sizes, "Edit design" on any size (opens the
+editor in template mode → "Save to template"), create/copy/delete templates, "Reset to original"
+for built-ins. Saved templates live in the repo and replace the built-in with the same id
+(`src/studio/templates/store.ts`, helpers + tests in `templates/admin.ts`). Code-authored
+built-ins below are only the starting point.
+
 A template is a **family**: one `fieldDefs` list + one layout per size
 (`src/studio/templates/types.ts`). Examples: `src/studio/templates/jobPost.ts` (one job, 4 sizes), `roundup.ts` (up to 5 jobs).
 Register built-ins in `src/studio/templates/index.ts`.

@@ -165,7 +165,7 @@ export interface Design {
   fields: Record<string, string>
   fieldDefs?: FieldDef[]
   /** which template/size this came from, if any */
-  source?: { templateId: string; size: string }
+  source?: { templateId: string; size: string; /** this design IS a template layout being edited by an admin */ templateEdit?: boolean }
   /** kit: designs made together from one job share a kitId */
   kitId?: string
   ownerUid?: string

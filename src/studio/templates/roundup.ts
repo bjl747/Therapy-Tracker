@@ -111,6 +111,7 @@ export const HOT_JOBS_ROUNDUP: TemplateDef = {
   layouts: { square: square(), story: story() },
   defaultSize: 'square',
   builtIn: true,
+  kitMode: 'roundup',
 }
 
 /** roundup fields from a list of jobs (first five) */

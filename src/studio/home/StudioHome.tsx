@@ -14,16 +14,20 @@ import { instantiate } from '../templates/instantiate'
 import { repo, type BrandAsset, type DesignSummary } from '../data'
 import { DesignCanvas } from '../ui/DesignCanvas'
 import { useToast } from '../ui/toast'
+import { TemplatesAdmin } from '../admin/TemplatesAdmin'
+import { useTemplates } from '../templates/store'
 
-type Tab = 'create' | 'designs' | 'brand'
+type Tab = 'create' | 'designs' | 'brand' | 'templates'
 
 export function StudioHome({ tab }: { tab: Tab }) {
   const nav = useNavigate()
-  const { isManager } = useAuth()
+  const { user } = useAuth()
+  const isAdmin = user.role === 'admin'
   const tabs: { id: Tab; label: string; to: string }[] = [
     { id: 'create', label: 'Create', to: '/studio' },
     { id: 'designs', label: 'My designs', to: '/studio/designs' },
     { id: 'brand', label: 'Brand', to: '/studio/brand' },
+    ...(isAdmin ? [{ id: 'templates' as Tab, label: 'Templates (admin)', to: '/studio/templates' }] : []),
   ]
   return (
     <div className="px-4 md:px-6 py-5 min-w-0">
@@ -47,7 +51,8 @@ export function StudioHome({ tab }: { tab: Tab }) {
       </nav>
       {tab === 'create' && <CreateTab />}
       {tab === 'designs' && <DesignsTab />}
-      {tab === 'brand' && <BrandTab canEdit={isManager} />}
+      {tab === 'brand' && <BrandTab canEdit={isAdmin} />}
+      {tab === 'templates' && <TemplatesAdmin />}
     </div>
   )
 }
@@ -56,7 +61,8 @@ export function StudioHome({ tab }: { tab: Tab }) {
 
 function CreateTab() {
   const nav = useNavigate()
-  const t = BUILT_IN_TEMPLATES[0]
+  const { templates } = useTemplates()
+  const t = templates[0] ?? BUILT_IN_TEMPLATES[0]
   const sample = useMemo(() => instantiate(t, 'square'), [t])
   const newBlank = async (k: SizeKey) => {
     const s = SIZES[k]
@@ -108,9 +114,9 @@ function CreateTab() {
         <div className="flex items-center gap-2 mb-3">
           <LayoutTemplate size={15} className="text-accent" />
           <div className="text-[15px] font-extrabold">Templates</div>
-          <span className="chip">{BUILT_IN_TEMPLATES.length}</span>
+          <span className="chip">{templates.length}</span>
         </div>
-        {BUILT_IN_TEMPLATES.map((tpl) => (
+        {templates.map((tpl) => (
           <div key={tpl.id} className="min-w-0 mb-4 last:mb-0">
             <div className="flex items-baseline gap-2 mb-2 min-w-0">
               <div className="text-[13.5px] font-bold whitespace-nowrap">{tpl.name}</div>
@@ -171,7 +177,8 @@ function DesignsTab() {
   const [q, setQ] = useState('')
   const load = () => void repo.listDesigns().then(setList)
   useEffect(load, [])
-  const shown = (list ?? []).filter((d) => d.name.toLowerCase().includes(q.trim().toLowerCase()))
+  // template drafts being edited by an admin aren't personal designs
+  const shown = (list ?? []).filter((d) => !d.id.startsWith('tpl_') && d.name.toLowerCase().includes(q.trim().toLowerCase()))
 
   const remove = async (d: DesignSummary) => {
     const full = await repo.getDesign(d.id)
@@ -329,7 +336,7 @@ function BrandTab({ canEdit }: { canEdit: boolean }) {
             </div>
           ))}
         </div>
-        {!canEdit && <p className="text-[12px] text-ink-3 mt-3">Managers can upload logos and photos here.</p>}
+        {!canEdit && <p className="text-[12px] text-ink-3 mt-3">Admins can upload logos and photos here.</p>}
       </section>
       <section className="card p-4 min-w-0 self-start">
         <div className="text-[15px] font-extrabold mb-3">Brand colours</div>

@@ -14,6 +14,8 @@ import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
 import type { TemplateDef } from '../templates/types'
 import { BUILT_IN_TEMPLATES } from '../templates'
+import { useTemplates, kitTemplates, roundupTemplates, useTemplateLib, effectiveTemplates } from '../templates/store'
+const useTemplateLibSnapshot = () => effectiveTemplates(useTemplateLib.getState().saved)
 import { HOT_JOBS_ROUNDUP, roundupFields } from '../templates/roundup'
 import { DesignCanvas, useAssetTick } from '../ui/DesignCanvas'
 import { caption } from './captions'
@@ -67,7 +69,6 @@ function rememberJob(f: Record<string, string>) {
   }
 }
 
-const KIT_SIZES = ['square', 'portrait', 'story', 'landscape'] as const
 /** social sites cap GIFs (LinkedIn ~5 MB); 600px @ 12fps keeps a 5s post well under */
 const GIF_SCALE = 600 / 1080
 const GIF_FPS = 12
@@ -110,7 +111,24 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 export function JobKit() {
   const nav = useNavigate()
   const toast = useToast()
-  const template = BUILT_IN_TEMPLATES[0]
+  const { templates } = useTemplates()
+  const choices = kitTemplates(templates)
+  const [templateId, setTemplateId] = useState(() => {
+    try {
+      return localStorage.getItem('studio.kit.template') ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const template = choices.find((t) => t.id === templateId) ?? choices[0] ?? BUILT_IN_TEMPLATES[0]
+  const pickTemplate = (id: string) => {
+    setTemplateId(id)
+    try {
+      localStorage.setItem('studio.kit.template', id)
+    } catch {
+      /* private mode */
+    }
+  }
   const [fields, setFields] = useState<Record<string, string>>(
     () => loadDraft() ?? Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.example])),
   )
@@ -130,6 +148,16 @@ export function JobKit() {
     return () => clearTimeout(t)
   }, [fields])
 
+  // keep the size picks to sizes this template actually has
+  const layoutKeys = Object.keys(template.layouts).join(',')
+  useEffect(() => {
+    setSizes((prev) => {
+      const ok = prev.filter((s) => template.layouts[s])
+      if (ok.length === prev.length && ok.length) return prev // unchanged → no re-render
+      return ok.length ? ok : [template.defaultSize]
+    })
+  }, [template.id, layoutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // locked template values always win over anything stored in drafts/recent jobs
   const effective = useMemo(
     () => ({ ...fields, ...Object.fromEntries(template.fieldDefs.filter((f) => f.locked).map((f) => [f.key, f.example])) }),
@@ -137,7 +165,7 @@ export function JobKit() {
   )
 
   const designs = useMemo(
-    () => Object.fromEntries(KIT_SIZES.map((s) => [s, instantiate(template, s, fields)])) as Record<string, Design>,
+    () => Object.fromEntries(Object.keys(template.layouts).map((s) => [s, instantiate(template, s, fields)])) as Record<string, Design>,
     [template, fields],
   )
   const text = useMemo(() => caption(effective, variant), [effective, variant])
@@ -246,7 +274,22 @@ export function JobKit() {
         </button>
         <div className="min-w-0">
           <div className="eyebrow">Studio · Job Kit</div>
-          <h1 className="text-[19px] font-extrabold leading-tight truncate">{template.name}</h1>
+          {choices.length > 1 ? (
+            <select
+              className="text-[19px] font-extrabold leading-tight bg-transparent outline-none max-w-full truncate cursor-pointer"
+              value={template.id}
+              onChange={(e) => pickTemplate(e.target.value)}
+              aria-label="Template"
+            >
+              {choices.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <h1 className="text-[19px] font-extrabold leading-tight truncate">{template.name}</h1>
+          )}
         </div>
         <div className="flex-1" />
         <button className="btn" onClick={() => setHotOpen(true)}>
@@ -340,14 +383,14 @@ export function JobKit() {
           <section className="min-w-0 scroll-mt-20" ref={previewsRef}>
             <div className="flex flex-wrap items-center gap-1.5 mb-3">
               <span className="eyebrow mr-1">Sizes</span>
-              {KIT_SIZES.map((s) => (
+              {Object.keys(template.layouts).map((s) => (
                 <button
                   key={s}
                   className={clsx('chip', sizes.includes(s) && 'chip-on')}
                   onClick={() => setSizes((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]))}
                   aria-pressed={sizes.includes(s)}
                 >
-                  {sizes.includes(s) && <Check size={12} />} {SIZES[s].label}
+                  {sizes.includes(s) && <Check size={12} />} {SIZES[s as keyof typeof SIZES]?.label ?? s}
                 </button>
               ))}
               <button className={clsx('chip', gif && 'chip-on')} onClick={() => setGif(!gif)} aria-pressed={gif}>
@@ -355,7 +398,7 @@ export function JobKit() {
               </button>
             </div>
             <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
-              {sizes.map((s) => (
+              {sizes.filter((s) => designs[s]).map((s) => (
                 <PreviewCard
                   key={s}
                   design={designs[s]}
@@ -722,7 +765,8 @@ function BatchMode({
   const nav = useNavigate()
   /** one "Hot jobs this week" post from the first five rows */
   const roundup = async () => {
-    const d = instantiate(HOT_JOBS_ROUNDUP, 'square', roundupFields(jobs), {
+    const rt = roundupTemplates(useTemplateLibSnapshot())[0] ?? HOT_JOBS_ROUNDUP
+    const d = instantiate(rt, rt.defaultSize, roundupFields(jobs), {
       name: `Hot jobs roundup — ${jobs.length > 5 ? 'first 5 of ' : ''}${jobs.length} job${jobs.length === 1 ? '' : 's'}`,
     })
     await repo.saveDesign(d)

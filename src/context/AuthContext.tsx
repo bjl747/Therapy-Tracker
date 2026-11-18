@@ -1,6 +1,6 @@
 // HUB SHIM — the hub's AuthContext. Studio uses only: user, can(), isManager.
-import { createContext, useContext, type ReactNode } from 'react'
-import type { AccessLevel, FeatureKey, HubUser } from '@/lib/types'
+import { createContext, useContext, useState, type ReactNode } from 'react'
+import type { AccessLevel, FeatureKey, HubUser, Role } from '@/lib/types'
 import { ROLE_DEFAULTS } from '@/lib/access'
 import { DEMO_USER } from '@/lib/demo'
 
@@ -8,16 +8,33 @@ interface AuthValue {
   user: HubUser
   can: (f: FeatureKey) => AccessLevel
   isManager: boolean
+  /** SHIM ONLY (demo): preview the app as another role */
+  setDemoRole?: (r: Role) => void
 }
 
 const Ctx = createContext<AuthValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const user = DEMO_USER
+  const [role, setRole] = useState<Role>(() => {
+    try {
+      return (localStorage.getItem('demo.role') as Role) || DEMO_USER.role
+    } catch {
+      return DEMO_USER.role
+    }
+  })
+  const user: HubUser = { ...DEMO_USER, role }
   const value: AuthValue = {
     user,
     can: (f) => (user.role === 'admin' ? 'edit' : user.access?.[f] ?? ROLE_DEFAULTS[user.role][f]),
     isManager: user.role === 'admin' || user.role === 'manager',
+    setDemoRole: (r) => {
+      setRole(r)
+      try {
+        localStorage.setItem('demo.role', r)
+      } catch {
+        /* ignore */
+      }
+    },
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

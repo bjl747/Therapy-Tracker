@@ -26,6 +26,9 @@ src/
     templates/            template FAMILIES (one field set, a layout per size)
       jobPost.ts          the team's travel job post: square / portrait / story / landscape
       roundup.ts          "Hot Jobs This Week": up to 5 jobs in one post (showIf rows)
+      store.ts            live library = built-ins + admin changes/new (useTemplates)
+      admin.ts            template-edit round trip, new/copy, validation (tested)
+    admin/TemplatesAdmin.tsx  admin settings: locked values, fields, sizes, new/copy/delete/reset
     photos/               US city photo library + location parsing / nearest-city matching
       cities.ts           index, matching (exact → nearest in state → nearest anywhere), search
       places.ts           search-as-you-type over all ~33k US places

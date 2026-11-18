@@ -5,8 +5,8 @@ export const DEMO: boolean = import.meta.env.VITE_HUB_DEMO === 'true' || !import
 
 export const DEMO_USER: HubUser = {
   uid: 'demo-bj',
-  name: 'Demo Manager',
+  name: 'Demo Admin',
   email: 'demo@gqrgm.com',
-  role: 'manager',
+  role: 'admin',
   status: 'active',
 }

@@ -19,7 +19,11 @@ export interface TemplateDef {
   /** keyed by size key (square, story, landscape, …) */
   layouts: Record<string, TemplateLayout>
   defaultSize: string
-  /** shipped in code (read-only) vs. saved by a manager */
+  /** shipped in code (read-only) vs. saved by an admin */
   builtIn?: boolean
+  /** set on a built-in that an admin has changed (UI shows "Reset to original") */
+  overridesBuiltIn?: boolean
+  /** 'roundup' = several jobs in one post (Many jobs → Roundup post); default 'job' */
+  kitMode?: 'job' | 'roundup'
   updatedAt?: number
 }
