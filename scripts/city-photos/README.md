@@ -1,0 +1,23 @@
+# US city photo library
+
+Builds `public/photos/cities/` — one free-licensed photo for every US city
+with 50,000+ people, plus place coordinates so any town can borrow the
+nearest city's photo.
+
+Run from this folder (Python 3 + Pillow):
+
+1. Download the inputs next to the scripts:
+   - Census city populations: `sub-est2024.csv` from
+     https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/cities/totals/
+     (save as `sub.csv`)
+   - Census place coordinates: `2024_Gaz_place_national.zip` from
+     https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/ (unzip it)
+2. `python3 collect.py` — finds each city's photo on Wikipedia/Wikidata and
+   its licence on Wikimedia Commons (slow on purpose: Wikimedia rate-limits).
+3. `python3 download.py ../../public/photos/cities` — downloads and resizes
+   the photos (1280px + 400px thumbnails) and writes `index.json`.
+4. `python3 places.py ../../public/photos/cities` — writes `places.json`
+   and adds coordinates to `index.json`.
+
+Every photo keeps its author, licence and source link in `index.json`; the
+app shows that credit on any design that uses it.
