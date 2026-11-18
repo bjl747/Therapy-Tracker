@@ -23,6 +23,7 @@ interface UiState {
   /** context menu: screen position + page point under it */
   menu: { x: number; y: number; page: Pt | null } | null
   paletteOpen: boolean
+  previewOpen: boolean
   /** a pointer gesture is in flight (panels skip expensive work) */
   gesturing: boolean
   toast: { msg: string; n: number } | null
@@ -37,6 +38,7 @@ interface UiState {
   setClip: (c: ClipData | null) => void
   setMenu: (m: UiState['menu']) => void
   setPalette: (v: boolean) => void
+  setPreview: (v: boolean) => void
   setGesturing: (v: boolean) => void
   showToast: (msg: string) => void
 }
@@ -53,6 +55,7 @@ export const useUi = create<UiState>((set, get) => ({
   clip: null,
   menu: null,
   paletteOpen: false,
+  previewOpen: false,
   gesturing: false,
   toast: null,
 
@@ -68,6 +71,7 @@ export const useUi = create<UiState>((set, get) => ({
   setClip: (c) => set({ clip: c }),
   setMenu: (m) => set({ menu: m }),
   setPalette: (v) => set({ paletteOpen: v }),
+  setPreview: (v) => set({ previewOpen: v }),
   setGesturing: (v) => {
     if (get().gesturing !== v) set({ gesturing: v })
   },

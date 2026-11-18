@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  ArrowLeft, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
@@ -25,6 +25,7 @@ import { repo } from '../data'
 import { useToast } from '../ui/toast'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
+import { kitWarnings } from './warnings'
 
 const DRAFT_KEY = 'studio.kit.draft'
 
@@ -198,7 +199,7 @@ export function JobKit() {
       {mode === 'many' ? (
         <BatchMode template={template} sizes={sizes} gif={gif} onPick={(f) => { setFields(f); setMode('one') }} />
       ) : (
-        <div className="grid gap-4 px-4 md:px-6 pb-28 lg:pb-6 min-h-0 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)_380px]">
+        <div className="grid gap-4 px-4 md:px-6 pb-6 min-h-0 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)_380px]">
           {/* ── job details ── */}
           <section className="card card-accent p-4 min-w-0 self-start lg:sticky lg:top-4">
             <div className="flex items-center justify-between mb-2">
@@ -311,7 +312,7 @@ export function JobKit() {
 
       {/* sticky action bar */}
       {mode === 'one' && (
-        <div className="fixed lg:static bottom-0 inset-x-0 z-20 px-4 md:px-6 py-3 lg:py-0 lg:pb-6 bg-surface-0/90 lg:bg-transparent backdrop-blur border-t border-line lg:border-0 flex items-center gap-2 justify-end">
+        <div className="sticky bottom-0 z-20 mt-auto px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
           {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
           <button className="btn btn-primary h-10 px-4" onClick={() => void downloadKit()} disabled={!!busy || !sizes.length}>
             <Download size={16} /> Download kit
@@ -404,6 +405,8 @@ function PreviewCard({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  const tick = useAssetTick()
+  const warnings = useMemo(() => kitWarnings(design), [design, tick]) // eslint-disable-line react-hooks/exhaustive-deps
   // tall formats shouldn't dominate the grid
   const maxH = 520
   const width = Math.min(w, (maxH * design.w) / design.h)
@@ -420,6 +423,21 @@ function PreviewCard({
           <DesignCanvas design={design} width={Math.max(60, width - 16)} />
         </button>
       </div>
+      {warnings.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {warnings.slice(0, 3).map((w, i) => (
+            <li
+              key={i}
+              className={clsx(
+                'text-[11.5px] font-semibold flex items-center gap-1.5 min-w-0',
+                w.level === 'error' ? 'text-[rgb(var(--status-bad))]' : 'text-[rgb(var(--status-warn))]',
+              )}
+            >
+              <AlertTriangle size={12} className="shrink-0" /> <span className="truncate">{w.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex flex-wrap gap-1.5 mt-2.5">
         <button className="btn h-8 px-2.5 flex-1" onClick={onCopy} title="Copy image to paste into LinkedIn, Facebook…">
           <ClipboardCopy size={14} /> Copy
