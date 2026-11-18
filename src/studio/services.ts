@@ -13,12 +13,12 @@ export function resolveImage(el: ImageEl, fields: Record<string, string>): Bound
   const pinned = fields[`${el.bind}__photo`]
   if (pinned) {
     const p = cityIndex().find((c) => c.id === pinned)
-    if (p) return { src: photoUrl(p.id), credit: { ...p.credit } }
+    if (p) return { src: photoUrl(p.id), focus: p.focus, credit: { ...p.credit } }
   }
   const value = fields[el.bind]
   if (!value) return null
   const m = resolveLocation(value)
-  return m ? { src: photoUrl(m.photo.id), credit: { ...m.photo.credit } } : null
+  return m ? { src: photoUrl(m.photo.id), focus: m.photo.focus, credit: { ...m.photo.credit } } : null
 }
 
 import type { Design } from './engine/model'

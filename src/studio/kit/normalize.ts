@@ -50,10 +50,36 @@ export function shiftHours(shift: string): number | null {
 
 /** apply the right formatter for a field on blur */
 export function tidyField(key: string, value: string): string {
+  if (key === 'job_title') return formatTitle(value)
   if (key === 'weekly_pay') return formatMoneyRange(value)
   if (key === 'wage_low' || key === 'wage_high') return bareNumber(value)
   if (key === 'shift') return formatShift(value)
   if (key === 'duration') return formatDuration(value)
   if (key === 'job_type' || key === 'cta') return value.toUpperCase()
   return value.trim()
+}
+
+/** healthcare acronyms that stay upper-case in titles */
+const ACRONYMS = new Set([
+  'RN', 'LPN', 'LVN', 'CNA', 'ICU', 'NICU', 'PICU', 'CVICU', 'MICU', 'SICU', 'ER', 'ED', 'OR', 'PACU', 'PCU', 'L&D', 'LDRP', 'CVOR',
+  'CT', 'MRI', 'PET', 'IR', 'PT', 'PTA', 'OT', 'COTA', 'SLP', 'RT', 'RRT', 'CRT', 'MLS', 'MLT', 'MT', 'CST', 'SPD', 'EKG', 'ECG', 'EEG',
+  'CVT', 'RCIS', 'ARRT', 'NP', 'PA', 'CRNA', 'LCSW', 'MSW', 'BSN', 'MDS', 'HHA', 'PRN', 'II', 'III', 'IV', 'OB', 'GI', 'PEDS',
+])
+const SMALL = new Set(['and', 'or', 'of', 'the', 'in', 'for', 'to', 'a', 'an', 'at'])
+
+/** "registered nurse - icu" → "Registered Nurse – ICU" (acronyms kept) */
+export function formatTitle(input: string): string {
+  const s = input.trim().replace(/\s+-\s+/g, ' – ').replace(/\s{2,}/g, ' ')
+  if (!s) return s
+  return s
+    .split(' ')
+    .map((w, i) => {
+      const bare = w.replace(/[^A-Za-z&]/g, '').toUpperCase()
+      if (ACRONYMS.has(bare)) return w.toUpperCase()
+      if (/[a-z][A-Z]/.test(w)) return w // keep deliberate camel case
+      const lw = w.toLowerCase()
+      if (i > 0 && SMALL.has(lw)) return lw
+      return lw.replace(/(^|[-/(])([a-z])/g, (_m, p: string, c: string) => p + c.toUpperCase())
+    })
+    .join(' ')
 }

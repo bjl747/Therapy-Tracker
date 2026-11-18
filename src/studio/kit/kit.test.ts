@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, tidyField } from './normalize'
+import { formatTitle, bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, tidyField } from './normalize'
 import { caption, hashtags } from './captions'
 import { matchHeader, parseJobs, parseTable } from './batch'
 import { JOB_FIELDS } from '../templates/jobPost'
@@ -24,6 +24,16 @@ describe('normalize', () => {
     expect(shiftHours('3x12s, Nights')).toBe(36)
     expect(bareNumber('$39.50')).toBe('39.50')
     expect(tidyField('job_type', 'allied travel')).toBe('ALLIED TRAVEL')
+  })
+})
+
+describe('titles', () => {
+  it('title-cases with acronyms', () => {
+    expect(formatTitle('registered nurse - icu')).toBe('Registered Nurse – ICU')
+    expect(formatTitle('CT TECH')).toBe('CT Tech')
+    expect(formatTitle('rn l&d')).toBe('RN L&D')
+    expect(formatTitle('director of nursing')).toBe('Director of Nursing')
+    expect(formatTitle('physical therapist (pt)')).toBe('Physical Therapist (PT)')
   })
 })
 

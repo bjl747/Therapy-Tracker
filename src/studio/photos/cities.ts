@@ -24,6 +24,8 @@ export interface CityPhoto {
   height: number
   lat?: number
   lon?: number
+  /** point of interest 0..1 (scripts/city-photos/focus.py) */
+  focus?: { x: number; y: number }
   credit: { provider: string; author: string; license: string; url: string }
 }
 

@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  ArrowLeft, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
+  ArrowLeft, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, PencilLine, Rows3, Shuffle, Sparkles, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
@@ -23,6 +23,8 @@ import { formatLocation } from '../photos/location'
 import { prepareDesign, resolveImage } from '../services'
 import { repo } from '../data'
 import { useToast } from '../ui/toast'
+import { LocationInput } from './LocationInput'
+import { HotJobPicker } from './HotJobPicker'
 
 const DRAFT_KEY = 'studio.kit.draft'
 
@@ -86,6 +88,7 @@ export function JobKit() {
   const [variant, setVariant] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [photoPicker, setPhotoPicker] = useState(false)
+  const [hotOpen, setHotOpen] = useState(false)
   useAssetTick()
 
   useEffect(() => {
@@ -179,6 +182,9 @@ export function JobKit() {
           <h1 className="text-[19px] font-extrabold leading-tight truncate">{template.name}</h1>
         </div>
         <div className="flex-1" />
+        <button className="btn" onClick={() => setHotOpen(true)}>
+          <Briefcase size={15} /> From Hot Jobs
+        </button>
         <Seg
           value={mode}
           onChange={(v) => setMode(v as 'one' | 'many')}
@@ -214,17 +220,22 @@ export function JobKit() {
                       className={clsx('min-w-0', (f.key === 'job_title' || f.key === 'location' || f.key === 'benefits' || f.key === 'weekly_pay') && 'col-span-2')}
                     >
                       <span className="block text-[11px] font-semibold text-ink-3 mb-1 truncate">{f.label}</span>
-                      <input
-                        className="input"
-                        value={fields[f.key] ?? ''}
-                        placeholder={f.example}
-                        list={f.kind === 'location' ? 'studio-places' : undefined}
-                        onChange={(e) => set(f.key, e.target.value)}
-                        onBlur={() => {
-                          tidy(f.key)
-                          if (f.kind === 'location') set(f.key, formatLocation(fields[f.key] ?? ''))
-                        }}
-                      />
+                      {f.kind === 'location' ? (
+                        <LocationInput
+                          value={fields[f.key] ?? ''}
+                          placeholder={f.example}
+                          onChange={(v) => set(f.key, v)}
+                          onCommit={(v) => set(f.key, formatLocation(v))}
+                        />
+                      ) : (
+                        <input
+                          className="input"
+                          value={fields[f.key] ?? ''}
+                          placeholder={f.example}
+                          onChange={(e) => set(f.key, e.target.value)}
+                          onBlur={() => tidy(f.key)}
+                        />
+                      )}
                       {f.kind === 'location' && (
                         <LocationHint
                           match={match}
@@ -238,7 +249,6 @@ export function JobKit() {
                 </div>
               </fieldset>
             ))}
-            <PlaceSuggestions />
           </section>
 
           {/* ── previews ── */}
@@ -308,6 +318,17 @@ export function JobKit() {
             <span className="opacity-80 font-normal tabular-nums">({sizes.length + (gif && sizes.includes('square') ? 1 : 0) + 1} files)</span>
           </button>
         </div>
+      )}
+
+      {hotOpen && (
+        <HotJobPicker
+          onClose={() => setHotOpen(false)}
+          onPick={(f) => {
+            setFields((cur) => ({ ...cur, ...f, location__photo: '' }))
+            setMode('one')
+            setHotOpen(false)
+          }}
+        />
       )}
 
       {photoPicker && (
@@ -457,34 +478,6 @@ function LocationHint({
         </button>
       )}
     </span>
-  )
-}
-
-/** <datalist> of US places for the location input (loaded lazily) */
-function PlaceSuggestions() {
-  const [opts, setOpts] = useState<string[]>([])
-  useEffect(() => {
-    let live = true
-    fetch('/photos/cities/places.json')
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((p: Record<string, Record<string, unknown>>) => {
-        if (!live) return
-        const out: string[] = []
-        for (const [st, names] of Object.entries(p))
-          for (const n of Object.keys(names)) out.push(`${n.replace(/\b\w/g, (c) => c.toUpperCase())}, ${st}`)
-        setOpts(out)
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [])
-  return (
-    <datalist id="studio-places">
-      {opts.map((o) => (
-        <option key={o} value={o} />
-      ))}
-    </datalist>
   )
 }
 

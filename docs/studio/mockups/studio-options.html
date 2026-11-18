@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio tab: 3 mockup options</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1fa;--bg2:#e3e9fb;--card:rgba(255,255,255,.72);--line:rgba(12,24,77,.12);--tx:#0C184D;--mut:#5b6488;--in:rgba(255,255,255,.9);--chip:rgba(41,64,218,.08);--acc:#2940DA;--shadow:0 6px 24px rgba(12,24,77,.08)}
+html.dark{--bg:#060b26;--bg2:#0b1340;--card:rgba(22,34,96,.55);--line:rgba(255,255,255,.12);--tx:#e9ecfa;--mut:#9aa4d0;--in:rgba(255,255,255,.07);--chip:rgba(120,140,255,.14);--acc:#7f93ff;--shadow:0 6px 24px rgba(0,0,0,.35)}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:Inter,system-ui,sans-serif;color:var(--tx);background:radial-gradient(1200px 600px at 10% -10%,var(--bg2),transparent),var(--bg);background-attachment:fixed;font-size:14px;overflow-x:hidden;font-variant-numeric:tabular-nums}
+.wrap{width:100%;padding:20px 16px 60px}
+@media(min-width:900px){.wrap{padding:28px 32px 80px}}
+h1{font-size:26px;font-weight:800;margin:0}
+.eyebrow{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--mut)}
+.mut{color:var(--mut)}
+.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.card{background:var(--card);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-left:3px solid var(--ac,#2940DA);border-radius:14px;padding:16px;box-shadow:var(--shadow);min-width:0}
+.card h3{font-size:16px;font-weight:800;margin:2px 0 8px}
+.card h2{font-size:19px;font-weight:800;margin:2px 0 6px}
+.teal{--ac:#12C4D1}.pink{--ac:#E74599}.navy{--ac:#0C184D}.blue{--ac:#2940DA}
+html.dark .navy{--ac:#7f93ff}
+.how{margin-top:14px;display:grid;gap:8px;font-size:13.5px;line-height:1.5}
+.how b{font-weight:700}
+.btn{font:inherit;font-weight:700;font-size:12px;border:1px solid var(--line);background:var(--in);color:var(--tx);border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn.pri{background:#2940DA;color:#fff;border-color:#2940DA;font-size:13.5px;padding:10px 16px}
+.btn.sm{font-size:11px;padding:4px 8px}
+.opt{margin-top:40px}
+.opthead{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.badge{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:99px;background:var(--chip);color:var(--acc)}
+.opt h2{font-size:22px;font-weight:800;margin:0}
+.pc{margin:6px 0 14px;font-size:13.5px}.pc .y{color:#0a8f6a;font-weight:700}.pc .n{color:#c0326f;font-weight:700}
+.screen{margin:14px 0;border:1px dashed var(--line);border-radius:16px;padding:12px;background:rgba(127,140,200,.05)}
+.screen>.lab{margin:0 0 10px}
+.app{padding:4px}
+.pt{font-size:22px;font-weight:800;margin:0 0 10px}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
+.tabs span{padding:8px 12px;font-weight:700;font-size:13px;color:var(--mut);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--acc);border-color:var(--acc)}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:800px){.g3{grid-template-columns:1fr}}
+.act{display:flex;gap:14px;align-items:center}
+
+.strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+.strip>div{flex:none;font-size:11px;color:var(--mut);font-weight:600}
+.strip .post{margin-bottom:5px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.tile{border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center;background:var(--in);font-size:12px;font-weight:700}
+.tile i{display:block;margin:0 auto 8px;border:2px solid var(--acc);border-radius:4px;opacity:.7}
+.tile small{display:block;color:var(--mut);font-weight:500;margin-top:2px}
+.kit{display:grid;grid-template-columns:340px 1fr 320px;gap:14px;align-items:start}
+@media(max-width:1100px){.kit{grid-template-columns:1fr}}
+.stick{position:sticky;top:8px}
+.f{display:grid;gap:4px;margin-bottom:9px}
+.f input,.f textarea,.f select{font:inherit;color:var(--tx);background:var(--in);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;min-width:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grp{margin:12px 0 6px;padding-top:8px;border-top:1px solid var(--line)}
+.grp:first-of-type{border:0;margin-top:0;padding:0}
+.hint{font-size:12px;background:var(--chip);border-radius:8px;padding:7px 9px;margin:-3px 0 9px;line-height:1.4}
+.hint a{color:var(--acc);font-weight:700}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font-size:12px;font-weight:700;padding:5px 11px;border-radius:99px;border:1px solid var(--line);background:var(--in)}
+.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+html.dark .chip.on{color:#060b26}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;align-items:start}
+.pcard{background:var(--in);border:1px solid var(--line);border-radius:12px;padding:10px}
+.pcard .bt{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.pcard .nm{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px}
+.cap{white-space:pre-line;font-size:13px;line-height:1.5;background:var(--in);border:1px solid var(--line);border-radius:8px;padding:10px;margin:6px 0 10px}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+/* job post graphic */
+.post{container-type:inline-size;aspect-ratio:1/1;background:#0C184D;color:#fff;border-radius:6px;position:relative;overflow:hidden;width:100%;font-family:Inter,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.post.k-pt{aspect-ratio:4/5}.post.k-st{aspect-ratio:9/16}.post.k-ls{aspect-ratio:1.91/1}.post .pi{height:100%;display:flex;flex-direction:column;gap:3cqw;padding:5cqw}.post.k-ls .pi{flex-direction:row}
+.post .ph{flex:1;border-radius:3cqw;background:linear-gradient(135deg,#b4bac8,#818899);position:relative;min-height:0}
+.post .pill{position:absolute;left:3cqw;top:3cqw;background:#E74599;color:#fff;font-weight:800;font-size:3.6cqw;padding:1.2cqw 3cqw;border-radius:99px;letter-spacing:.06em}
+.post .body{display:flex;flex-direction:column;gap:1.6cqw;justify-content:flex-end}
+.post.k-ls .ph{flex:0 0 42%}.post.k-ls .body{flex:1;justify-content:center}
+.post .t{font-size:10cqw;font-weight:800;line-height:1}
+.post .loc{font-size:5cqw;font-weight:700;color:#12C4D1}
+.post .pay{font-size:10.5cqw;font-weight:800;line-height:1.05}
+.post .sp{display:flex;gap:2cqw;font-size:3cqw;font-weight:600;border-top:1px solid rgba(255,255,255,.25);padding-top:2cqw;opacity:.9;white-space:nowrap;overflow:hidden}
+.post.k-ls .t{font-size:7.5cqw}.post.k-ls .pay{font-size:7.5cqw}.post.k-ls .loc{font-size:4cqw}.post.k-ls .sp{font-size:2.6cqw}.post.k-ls .pill{font-size:3cqw}
+.post .gb{position:absolute;right:3cqw;top:3cqw;background:#12C4D1;color:#0C184D;font-style:normal;font-weight:800;font-size:3.4cqw;padding:1cqw 2.6cqw;border-radius:99px}
+.post.mini .sp,.post.mini .pill{display:none}
+/* B */
+.steps{display:grid;gap:14px;width:100%}
+.step{display:grid;grid-template-columns:44px 1fr;gap:12px}
+.num{width:36px;height:36px;border-radius:50%;background:var(--chip);color:var(--acc);font-weight:800;display:grid;place-items:center}
+.film{display:flex;gap:10px;overflow-x:auto;padding:4px 0 8px}
+.city{flex:none;width:180px;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--in)}
+.city.on{border-color:var(--acc)}
+.city .im{height:110px;background:linear-gradient(135deg,#b4bac8,#7d8499)}
+.city div:last-child{padding:7px 9px;font-size:12px;font-weight:700}
+.car{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:6px 0 10px;align-items:flex-end}
+.car>div{flex:none;scroll-snap-align:start;font-size:11px;font-weight:700;color:var(--mut)}
+.share{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.share .card{padding:12px}
+.feedgrp{margin-bottom:14px}
+.feedgrp .r{display:flex;gap:12px;overflow-x:auto;padding:8px 0 4px;align-items:flex-end}
+.feedgrp .r>div{flex:none;font-size:11px;color:var(--mut);font-weight:600}
+/* C */
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.boardw{overflow-x:auto}
+table.board{border-collapse:separate;border-spacing:0 8px;width:100%;min-width:760px}
+.board th{text-align:left;padding:0 10px}
+.board td{padding:8px 10px;vertical-align:bottom;background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.board td:first-child{border-left:3px solid var(--ac);border-radius:12px 0 0 12px;border-left:3px solid var(--ac,#2940DA)}
+.board td:last-child{border-right:1px solid var(--line);border-radius:0 12px 12px 0}
+.board td.cell .post{height:84px;aspect-ratio:auto;width:auto}
+.cellp{display:inline-block;border-radius:8px;padding:3px;border:2px solid transparent;cursor:pointer}
+.cellp.sel{border-color:var(--acc);box-shadow:0 0 0 3px var(--chip)}
+.job b{display:block;font-size:14px;font-weight:800}.job span{font-size:11.5px;color:var(--mut)}
+.layoutC{display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start}
+@media(max-width:1100px){.layoutC{grid-template-columns:1fr}}
+.drawer{border-left-width:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top">
+ <div><div class="eyebrow">Recruiter hub · design review</div><h1>Studio tab: 3 mockup options</h1></div>
+ <button class="btn" id="tg">Toggle dark mode</button>
+</div>
+<div class="card how blue" style="margin-top:14px">
+ <div><b>How to compare.</b> Each option shows two screens: <b>1) Studio home</b> and <b>2) Job Kit</b> (job details, live previews in every size, caption, download). Flip dark mode with the button, and resize the window: phone stacks everything, ultrawide uses the full width.</div>
+ <div><b>Option A</b> is what the build team has started, so it is the baseline. <b>B</b> trades power for guidance (one step at a time). <b>C</b> trades guidance for speed on many jobs. Tell me A, B, C, or a mix (for example A's Job Kit with C's board as the "Many jobs at once" screen).</div>
+</div>
+
+<!-- ========== A ========== -->
+<section class="opt">
+ <div class="opthead"><span class="badge">Being built</span><h2>Option A · Canva-style launcher</h2></div>
+ <div class="pc"><span class="y">Pros:</span> familiar, matches current build, every tool one click away. <span class="n">Cons:</span> three columns get busy on laptops; "many jobs" is a separate flow.</div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 1 · Studio home</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span class="on">Create</span><span>My designs</span><span>Brand</span></div>
+  <div class="g3" id="aActs"></div>
+  <div class="card teal" style="margin-top:14px"><div class="eyebrow">Start from a layout</div><h3>Templates</h3><div class="strip" id="aTpl"></div></div>
+  <div class="card pink" style="margin-top:14px"><div class="eyebrow">Blank canvas</div><h3>Start blank</h3><div class="tiles" id="aBlank"></div></div>
+ </div></div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 2 · Job Kit</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span class="on">Create</span><span>My designs</span><span>Brand</span></div>
+  <div class="kit">
+   <div class="card blue stick"><div class="eyebrow">Step 1</div><h3>Job details</h3>
+    <div class="eyebrow grp">Job</div>
+    <div class="f"><label class="eyebrow">Title</label><input value="Pharmacist"></div>
+    <div class="f"><label class="eyebrow">Location</label><input value="Charlottesville, VA"></div>
+    <div class="hint">Charlottesville, VA · nearest photo · 42 km · <a href="#">Change</a></div>
+    <div class="eyebrow grp">Pay</div>
+    <div class="row2"><div class="f"><label class="eyebrow">Min / wk</label><input value="3227"></div><div class="f"><label class="eyebrow">Max / wk</label><input value="3547"></div></div>
+    <div class="eyebrow grp">Details</div>
+    <div class="row2"><div class="f"><label class="eyebrow">Length</label><input value="13 weeks"></div><div class="f"><label class="eyebrow">Shift</label><input value="Days"></div></div>
+    <div class="eyebrow grp">Footer</div>
+    <div class="f"><label class="eyebrow">Contact line</label><input value="Apply: jobs.company.com"></div>
+   </div>
+   <div class="card teal"><div class="eyebrow">Step 2</div><h3>Previews</h3>
+    <div class="chips"><span class="chip on">All</span><span class="chip">Square</span><span class="chip">Portrait</span><span class="chip">Story</span><span class="chip">Landscape</span><span class="chip">GIF</span></div>
+    <div class="pgrid" id="aPrev"></div></div>
+   <div class="stick" style="display:grid;gap:14px">
+    <div class="card pink"><div class="eyebrow">Step 3</div><h3>Post caption</h3><div class="cap" id="cap"></div><div class="btnrow"><button class="btn">Reword</button><button class="btn">Copy</button></div></div>
+    <button class="btn pri">Download kit (5 files + caption)</button>
+   </div>
+  </div>
+ </div></div>
+</section>
+
+<!-- ========== B ========== -->
+<section class="opt">
+ <div class="opthead"><span class="badge" style="color:#E74599">Alternative</span><h2>Option B · Conversation-style wizard</h2></div>
+ <div class="pc"><span class="y">Pros:</span> hand-holds new recruiters, great photo choice, works well on phones. <span class="n">Cons:</span> slower for power users; more scrolling; editing a single size takes extra clicks.</div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 1 · Studio home (recent kits feed)</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span class="on">Recent kits</span><span>New kit</span><span>PDFs</span><span>Brand</span></div>
+  <div class="card blue" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="eyebrow">Start here</div><h3 style="margin:2px 0">What job are we posting?</h3></div><button class="btn pri">Pick a job</button><button class="btn">Paste many jobs</button></div>
+  <div id="bFeed"></div>
+ </div></div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 2 · Job Kit (4 steps, one column)</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span>Recent kits</span><span class="on">New kit</span><span>PDFs</span><span>Brand</span></div>
+  <div class="steps">
+   <div class="step"><div class="num">1</div><div class="card blue"><div class="eyebrow">Step 1 of 4</div><h3>Which job?</h3>
+     <div class="row2" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"><div class="f"><label class="eyebrow">Title</label><input value="Pharmacist"></div><div class="f"><label class="eyebrow">Location</label><input value="Charlottesville, VA"></div><div class="f"><label class="eyebrow">Pay / wk</label><input value="$3,227 – $3,547"></div><div class="f"><label class="eyebrow">Length · Shift</label><input value="13 wks · Days"></div></div>
+     <span class="mut" style="font-size:12px">or pick from open jobs, or paste a list to make a kit for each.</span></div></div>
+   <div class="step"><div class="num">2</div><div class="card teal"><div class="eyebrow">Step 2 of 4</div><h3>Pick a photo (nearby cities)</h3><div class="film" id="bFilm"></div></div></div>
+   <div class="step"><div class="num">3</div><div class="card pink"><div class="eyebrow">Step 3 of 4</div><h3>Review every size</h3><div class="car" id="bCar"></div></div></div>
+   <div class="step"><div class="num">4</div><div class="card navy"><div class="eyebrow">Step 4 of 4</div><h3>Share</h3>
+     <div class="cap" id="cap2"></div>
+     <div class="share" id="bShare"></div>
+     <div style="margin-top:12px"><button class="btn pri">Download kit</button></div></div></div>
+  </div>
+ </div></div>
+</section>
+
+<!-- ========== C ========== -->
+<section class="opt">
+ <div class="opthead"><span class="badge" style="color:#12C4D1">Alternative</span><h2>Option C · Board / ultrawide power view</h2></div>
+ <div class="pc"><span class="y">Pros:</span> see every job and size at once, ideal on a 34" ultrawide, fastest for batches. <span class="n">Cons:</span> denser, steeper learning curve; phones get a scrollable board.</div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 1 · Studio home (My jobs board)</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span class="on">My jobs</span><span>All designs</span><span>PDFs</span><span>Brand</span></div>
+  <div class="filters"><span class="chip on">All jobs · 6</span><span class="chip">Needs post · 3</span><span class="chip">Posted · 3</span><span class="chip">Pharmacy</span><span class="chip">Nursing</span><span style="flex:1"></span><button class="btn">Select rows</button><button class="btn pri">Make kits for selected</button></div>
+  <div class="boardw"><table class="board" id="bd1"></table></div>
+ </div></div>
+
+ <div class="screen"><div class="eyebrow lab">Screen 2 · Job Kit (board + job drawer)</div>
+ <div class="app">
+  <div class="pt">Studio</div>
+  <div class="tabs"><span class="on">My jobs</span><span>All designs</span><span>PDFs</span><span>Brand</span></div>
+  <div class="layoutC">
+   <div class="boardw"><table class="board" id="bd2"></table>
+    <div class="card teal" style="margin-top:6px"><div class="eyebrow">Editing · Pharmacist · Story</div><h3>Click any cell to edit that size</h3><span class="mut">The editor opens over the board; other sizes keep updating from the job form.</span></div></div>
+   <div class="card blue drawer stick"><div class="eyebrow">Job drawer</div><h3>Pharmacist · Charlottesville, VA</h3>
+    <div class="f"><label class="eyebrow">Title</label><input value="Pharmacist"></div>
+    <div class="f"><label class="eyebrow">Location</label><input value="Charlottesville, VA"></div>
+    <div class="hint">Nearest photo · 42 km · <a href="#">Change</a></div>
+    <div class="row2"><div class="f"><label class="eyebrow">Min / wk</label><input value="3227"></div><div class="f"><label class="eyebrow">Max / wk</label><input value="3547"></div></div>
+    <div class="eyebrow">Caption</div><div class="cap" id="cap3"></div>
+    <div class="btnrow"><button class="btn">Reword</button><button class="btn">Copy</button><button class="btn pri">Download kit</button></div></div>
+  </div>
+ </div></div>
+</section>
+</div>
+
+<script>
+var SZ={sq:'Square',pt:'Portrait',st:'Story',ls:'Landscape',gif:'GIF'};
+function P(k,x){var c=k=='gif'?'sq':k;return '<div class="post k-'+c+(x?' '+x:'')+'"><div class="pi"><div class="ph"><span class="pill">NOW HIRING</span></div><div class="body"><div class="t">Pharmacist</div><div class="loc">Fishersville, VA</div><div class="pay">$3,227 – $3,547</div><div class="sp"><span>Weekly pay</span><span>·</span><span>13 weeks</span><span>·</span><span>Days</span></div></div></div>'+(k=='gif'?'<i class="gb">GIF</i>':'')+'</div>'}
+var CAP="Now hiring: Pharmacist in Fishersville, VA.\n$3,227 – $3,547 per week · 13 weeks · Days\nApply today: jobs.company.com\n#NowHiring #Pharmacist #TravelJobs";
+['cap','cap2','cap3'].forEach(function(i){document.getElementById(i).textContent=CAP});
+var $=function(i){return document.getElementById(i)};
+// A
+var acts=[['blue','Make a job post','Fill in a job, get every size, GIF and caption.',P('sq','mini')],['teal','Many jobs at once','Paste or pick jobs; get a kit for each.','<div style="width:84px;flex:none;display:grid;grid-template-columns:1fr 1fr;gap:4px">'+[1,2,3,4].map(function(){return P('sq','mini')}).join('')+'</div>'],['pink','Combine & edit PDFs','Merge, reorder, rotate and sign pages.','<div style="width:84px;flex:none;height:84px;border:2px solid var(--line);border-radius:6px;background:var(--in);display:grid;place-items:center;font-weight:800;color:#E74599">PDF</div>']];
+$('aActs').innerHTML=acts.map(function(a){return '<div class="card '+a[0]+' act">'+(a[3].indexOf('class="post')==0?'<div style="width:84px;flex:none">'+a[3]+'</div>':a[3])+'<div><div class="eyebrow">Action</div><h3 style="margin:2px 0 4px">'+a[1]+'</h3><div class="mut" style="font-size:12.5px">'+a[2]+'</div></div></div>'}).join('');
+$('aTpl').innerHTML=[['sq',120],['pt',100],['st',72],['ls',200],['sq',120],['pt',100],['st',72],['gif',120],['ls',200]].map(function(t,i){return '<div style="width:'+t[1]+'px">'+P(t[0],'mini')+'Template '+(i+1)+' · '+SZ[t[0]]+'</div>'}).join('');
+$('aBlank').innerHTML=[['Square','1080×1080',34,34],['Portrait','1080×1350',28,35],['Story','1080×1920',22,39],['Landscape','1200×630',50,26],['A4 page','PDF',28,38],['Custom','W × H',34,34]].map(function(t){return '<div class="tile"><i style="width:'+t[2]+'px;height:'+t[3]+'px"></i>'+t[0]+'<small>'+t[1]+'</small></div>'}).join('');
+$('aPrev').innerHTML=['sq','pt','st','ls','gif'].map(function(k){return '<div class="pcard"><div class="nm"><span>'+SZ[k]+'</span><span class="mut">'+({sq:'1080×1080',pt:'1080×1350',st:'1080×1920',ls:'1200×630',gif:'1080×1080'})[k]+'</span></div>'+P(k)+'<div class="bt"><button class="btn sm">Copy</button><button class="btn sm">PNG</button><button class="btn sm">GIF</button><button class="btn sm">Edit</button></div></div>'}).join('');
+// B
+var jobs=[['Pharmacist · Fishersville, VA','Today',['sq','pt','st','ls','gif']],['Registered Nurse · Roanoke, VA','Yesterday',['sq','st','ls']],['Physical Therapist · Richmond, VA','Mon 16 Nov',['sq','pt','gif']]];
+$('bFeed').innerHTML=jobs.map(function(j,i){return '<div class="feedgrp card '+['teal','pink','navy'][i]+'"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><div class="eyebrow">'+j[1]+'</div><h3 style="margin:2px 0">'+j[0]+'</h3></div><div class="btnrow"><button class="btn">Open kit</button><button class="btn">Duplicate</button></div></div><div class="r">'+j[2].map(function(k){var w={sq:96,pt:84,st:58,ls:170,gif:96}[k];return '<div style="width:'+w+'px">'+P(k,'mini')+SZ[k]+'</div>'}).join('')+'</div></div>'}).join('');
+var cities=[['Fishersville, VA','8 km'],['Charlottesville, VA','42 km'],['Staunton, VA','18 km'],['Roanoke, VA','110 km'],['Richmond, VA','160 km'],['Lynchburg, VA','95 km']];
+$('bFilm').innerHTML=cities.map(function(c,i){return '<div class="city'+(i==1?' on':'')+'"><div class="im"></div><div>'+c[0]+'<br><span class="mut" style="font-weight:500">'+c[1]+(i==1?' · selected':'')+'</span></div></div>'}).join('');
+$('bCar').innerHTML=['sq','pt','st','ls','gif'].map(function(k){var w={sq:300,pt:270,st:200,ls:460,gif:300}[k];return '<div style="width:'+w+'px">'+P(k)+'<div style="margin:6px 0">'+SZ[k]+'</div><div class="btnrow"><button class="btn sm">Edit</button><button class="btn sm">PNG</button></div></div>'}).join('');
+$('bShare').innerHTML=['LinkedIn','Facebook','Instagram','X / Twitter','Indeed'].map(function(n){return '<div class="card" style="--ac:#2940DA"><div class="eyebrow">'+n+'</div><div style="font-weight:700;margin:4px 0 8px;font-size:13px">Best: '+({LinkedIn:'Landscape',Facebook:'Square',Instagram:'Story + Portrait','X / Twitter':'Landscape',Indeed:'Square'})[n]+'</div><div class="btnrow"><button class="btn sm">Copy caption</button><button class="btn sm">Copy image</button></div></div>'}).join('');
+// C
+var rows=[['Pharmacist','Fishersville, VA','blue',1],['Registered Nurse','Roanoke, VA','teal',1],['Physical Therapist','Richmond, VA','pink',0],['Respiratory Therapist','Norfolk, VA','navy',1],['Radiology Tech','Lynchburg, VA','teal',0],['Lab Scientist','Staunton, VA','blue',1]];
+var cols=[['sq',84],['pt',67],['st',47],['ls',160],['gif',84]];
+function board(sel){var h='<thead><tr><th class="eyebrow">Job</th>'+cols.map(function(c){return '<th class="eyebrow">'+SZ[c[0]]+'</th>'}).join('')+'<th class="eyebrow">Status</th></tr></thead><tbody>';
+ rows.forEach(function(r,i){h+='<tr><td class="job" style="--ac:'+({blue:'#2940DA',teal:'#12C4D1',pink:'#E74599',navy:'#0C184D'})[r[2]]+'"><b>'+r[0]+'</b><span>'+r[1]+'</span></td>'+cols.map(function(c){var s=sel&&i==0&&c[0]=='st';return '<td class="cell"><span class="cellp'+(s?' sel':'')+'">'+(r[3]||c[0]=='sq'?'<div style="width:'+c[1]+'px">'+P(c[0],'mini').replace('class="post','style="height:84px;aspect-ratio:auto" class="post')+'</div>':'<div style="width:'+c[1]+'px;height:84px;border:1.5px dashed var(--line);border-radius:6px;display:grid;place-items:center;color:var(--mut);font-size:18px">+</div>')+'</span></td>'}).join('')+'<td><span class="chip '+(r[3]?'on':'')+'">'+(r[3]?'Kit ready':'Needs post')+'</span></td></tr>'});
+ return h+'</tbody>'}
+$('bd1').innerHTML=board(false);$('bd2').innerHTML=board(true);
+$('tg').onclick=function(){document.documentElement.classList.toggle('dark')};
+</script>
+</body>
+</html>

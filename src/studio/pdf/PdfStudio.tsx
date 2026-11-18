@@ -210,7 +210,7 @@ export function PdfStudio() {
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden 2xl:grid-cols-[minmax(0,1fr)_380px]">
-        <main className="flex min-h-0 min-w-0 flex-col gap-3">
+        <main className="flex min-w-0 flex-col gap-3 lg:min-h-0">
           <div className="card flex min-w-0 flex-wrap items-center gap-1.5 p-2" role="toolbar" aria-label="Page actions">
             <TB icon={<Plus size={14} />} label="Add files" showLabel primary onClick={() => fileRef.current?.click()} />
             <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
@@ -233,7 +233,7 @@ export function PdfStudio() {
             </span>
           </div>
 
-          <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1">
+          <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
             {showGrid ? (
               <PageGrid onOpen={setEditId} />
             ) : (
