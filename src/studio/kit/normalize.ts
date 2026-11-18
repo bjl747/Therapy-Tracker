@@ -71,12 +71,18 @@ const SMALL = new Set(['and', 'or', 'of', 'the', 'in', 'for', 'to', 'a', 'an', '
 export function formatTitle(input: string): string {
   const s = input.trim().replace(/\s+-\s+/g, ' – ').replace(/\s{2,}/g, ' ')
   if (!s) return s
+  // a title typed in normal case keeps its short all-caps abbreviations; a fully shouted one ("CT TECH") doesn't
+  const typedCase = /[a-z]/.test(s) || !s.includes(' ')
   return s
     .split(' ')
     .map((w, i) => {
       const bare = w.replace(/[^A-Za-z&]/g, '').toUpperCase()
       if (ACRONYMS.has(bare)) return w.toUpperCase()
       if (/[a-z][A-Z]/.test(w)) return w // keep deliberate camel case
+      // short all-caps abbreviations typed that way stay as typed ("(RRT/CRT)", "CVT", "OR"); a shouted long word
+      // ("PHARMACIST") is still tidied
+      const parts = w.split(/[^A-Za-z]+/).filter(Boolean)
+      if (typedCase && parts.length && !/[a-z]/.test(w) && parts.every((p) => p.length >= 2 && p.length <= 4)) return w
       const lw = w.toLowerCase()
       if (i > 0 && SMALL.has(lw)) return lw
       return lw.replace(/(^|[-/(])([a-z])/g, (_m, p: string, c: string) => p + c.toUpperCase())

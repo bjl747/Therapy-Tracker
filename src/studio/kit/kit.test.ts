@@ -182,3 +182,13 @@ describe('review fixes (2026-11-18)', () => {
     expect(r.jobs[0].job_title).toBe('ICU')
   })
 })
+
+describe('title abbreviations (2026-11-18)', () => {
+  it('keeps short all-caps abbreviations as typed', () => {
+    expect(formatTitle('Respiratory (RRT/CRT)')).toBe('Respiratory (RRT/CRT)')
+    expect(formatTitle('Cath Lab – CVT')).toBe('Cath Lab – CVT')
+    expect(formatTitle('OR Tech')).toBe('OR Tech')
+    expect(formatTitle('PHARMACIST')).toBe('Pharmacist')
+    expect(formatTitle('rn - icu')).toBe('RN – ICU')
+  })
+})

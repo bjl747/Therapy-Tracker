@@ -61,6 +61,8 @@ export function StudioHome({ tab }: { tab: Tab }) {
 
 function CreateTab() {
   const nav = useNavigate()
+  // View access makes and downloads job posts; starting a design saves it, which needs Edit
+  const canEdit = useAuth().can('studio') === 'edit'
   const { templates } = useTemplates()
   const t = templates[0] ?? BUILT_IN_TEMPLATES[0]
   const sample = useMemo(() => instantiate(t, 'square'), [t])
@@ -109,6 +111,13 @@ function CreateTab() {
         </button>
       </div>
 
+      {!canEdit && (
+        <div className="card p-4 text-[12.5px] text-ink-2">
+          <b>You have View access.</b> Make job posts and download them, and use the PDF tools. Saving and editing designs
+          needs Studio <b>Edit</b>: ask an admin.
+        </div>
+      )}
+      {canEdit && <>
       {/* templates */}
       <section className="card p-4 min-w-0">
         <div className="flex items-center gap-2 mb-3">
@@ -164,6 +173,7 @@ function CreateTab() {
           })}
         </div>
       </section>
+      </>}
     </div>
   )
 }
@@ -173,7 +183,8 @@ function CreateTab() {
 function DesignsTab() {
   const nav = useNavigate()
   const toast = useToast()
-  const { user, isManager } = useAuth()
+  const { user, isManager, can } = useAuth()
+  const canEdit = can('studio') === 'edit' // duplicate and delete save to the hub: Edit only
   const [list, setList] = useState<DesignSummary[] | null>(null)
   const [q, setQ] = useState('')
   const [leftovers, setLeftovers] = useState(0)
@@ -196,7 +207,7 @@ function DesignsTab() {
   }
   const mine = (d: DesignSummary) => !d.ownerUid || d.ownerUid === user?.uid
   // owners and managers / admins can delete (the rules say the same); AMs can open everyone's but not delete them
-  const canDelete = (d: DesignSummary) => mine(d) || isManager || user?.role === 'admin'
+  const canDelete = (d: DesignSummary) => canEdit && (mine(d) || isManager || user?.role === 'admin')
   // template drafts being edited by an admin aren't personal designs
   const shown = (list ?? []).filter((d) => !d.id.startsWith('tpl_') && d.name.toLowerCase().includes(q.trim().toLowerCase()))
 
@@ -231,7 +242,7 @@ function DesignsTab() {
           <input className="input pl-8" placeholder="Search designs" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
-      {leftovers > 0 && (
+      {canEdit && leftovers > 0 && (
         <div className="card card-accent p-3 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="min-w-0 flex-1 text-[12.5px]">
             <b>{leftovers} design{leftovers === 1 ? '' : 's'} saved only in this browser</b>
@@ -282,9 +293,11 @@ function DesignsTab() {
                     </div>
                   )}
                 </div>
-                <button className="p-1 text-ink-3 hover:text-ink" onClick={() => void duplicate(d)} aria-label="Duplicate">
-                  <Copy size={14} />
-                </button>
+                {canEdit && (
+                  <button className="p-1 text-ink-3 hover:text-ink" onClick={() => void duplicate(d)} aria-label="Duplicate">
+                    <Copy size={14} />
+                  </button>
+                )}
                 {canDelete(d) && (
                   <button className="p-1 text-ink-3 hover:text-[rgb(var(--status-bad))]" onClick={() => void remove(d)} aria-label="Delete">
                     <Trash2 size={14} />
