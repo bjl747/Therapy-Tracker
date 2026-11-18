@@ -13,7 +13,14 @@ import { StudioHome } from './home/StudioHome'
 import { JobKit } from './kit/JobKit'
 import { Toaster } from './ui/toast'
 
-const Editor = lazy(() => import('./editor/Editor').then((m) => ({ default: m.Editor })))
+// TEMP until the editor lands
+const mods = import.meta.glob('./editor/Editor.tsx')
+const Editor = lazy(async () => {
+  const load = mods['./editor/Editor.tsx']
+  if (!load) return { default: (() => <div className="p-6">Editor coming…</div>) as unknown as React.ComponentType<{ designId: string; onExit: () => void; canEditLocked?: boolean; readOnly?: boolean }> }
+  const m = (await load()) as { Editor: React.ComponentType<{ designId: string; onExit: () => void; canEditLocked?: boolean; readOnly?: boolean }> }
+  return { default: m.Editor }
+})
 const PdfStudio = lazy(() => import('./pdf/PdfStudio').then((m) => ({ default: m.PdfStudio })))
 
 function Skeleton() {
@@ -22,6 +29,15 @@ function Skeleton() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="card h-48 animate-pulse" />
       ))}
+    </div>
+  )
+}
+
+function PdfRoute() {
+  const nav = useNavigate()
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <PdfStudio onBack={() => nav('/studio')} />
     </div>
   )
 }
@@ -43,14 +59,7 @@ export function StudioPage() {
           <Route path="brand" element={<StudioHome tab="brand" />} />
           <Route path="kit" element={<JobKit />} />
           <Route path="design/:id" element={<EditorRoute />} />
-          <Route
-            path="pdf"
-            element={
-              <div className="flex flex-col flex-1 min-h-0">
-                <PdfStudio />
-              </div>
-            }
-          />
+          <Route path="pdf" element={<PdfRoute />} />
         </Routes>
       </Suspense>
       <Toaster />
