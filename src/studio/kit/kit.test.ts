@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatTitle, bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, tidyField } from './normalize'
+import { formatTitle, bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, shiftLength, tidyField } from './normalize'
 import { article, caption, hashtags } from './captions'
 import { matchHeader, parseJobs, parseTable } from './batch'
 import { JOB_FIELDS } from '../templates/jobPost'
@@ -22,6 +22,18 @@ describe('normalize', () => {
     expect(formatDuration('13')).toBe('13 Weeks')
     expect(formatDuration('8 wks')).toBe('8 Weeks')
     expect(shiftHours('3x12s, Nights')).toBe(36)
+    // hours in one shift, for the pay calculator (what a hot job's description gave, or what the recruiter typed)
+    expect(shiftLength('4x10s, Days')).toBe(10)
+    expect(shiftLength('2x12s, Nights, PRN')).toBe(12)
+    expect(shiftLength('10s, Nights')).toBe(10)
+    expect(shiftLength('3x12s or 4x12s, Nights')).toBe(12)
+    expect(shiftLength('8-hour shifts')).toBe(8)
+    expect(shiftLength('36 or 48 hrs')).toBeNull()
+    expect(shiftLength('Days')).toBeNull()
+    expect(shiftLength('')).toBeNull()
+    // a shift already in display form stays as it is
+    expect(formatShift('4x10s, Days')).toBe('4x10s, Days')
+    expect(formatShift('2x12s, Nights, PRN')).toBe('2x12s, Nights, PRN')
     expect(bareNumber('$39.50')).toBe('39.50')
     expect(tidyField('job_type', 'allied travel')).toBe('ALLIED TRAVEL')
   })

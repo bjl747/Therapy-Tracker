@@ -42,6 +42,13 @@ export function formatDuration(input: string): string {
   return m ? `${m[1]} Weeks` : input.trim()
 }
 
+/** hours in one shift from the Shift field: "4x10s, Days" → 10, "12s, Nights" → 12, "8-hour shifts" → 8; null when it doesn't say */
+export function shiftLength(shift: string): number | null {
+  const m = /\d\s*[x×*]\s*(\d{1,2}(?:\.5)?)/i.exec(shift) ?? /^\s*(\d{1,2}(?:\.5)?)\s*'?s\b/i.exec(shift) ?? /(\d{1,2}(?:\.5)?)\s*-?\s*(?:h|hrs?|hours?)\b/i.exec(shift)
+  const n = m ? Number(m[1]) : NaN
+  return n >= 4 && n <= 16 ? n : null
+}
+
 /** weekly hours implied by a shift ("3x12s" → 36) — used by pay hints */
 export function shiftHours(shift: string): number | null {
   const m = /(\d)\s*[x×]\s*(\d{1,2})/i.exec(shift)
