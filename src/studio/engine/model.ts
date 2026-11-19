@@ -61,6 +61,9 @@ export interface TextStyle {
   valign: VAlign
   upper: boolean
   underline: boolean
+  /** false = letters at their plain widths, no pair kerning ("AV", "To" not tucked together). The official job post is
+   *  set that way, so the template turns it off to match; everything else leaves it on. */
+  kerning?: boolean
 }
 
 export interface TextEl extends BaseEl {
@@ -121,8 +124,11 @@ export interface Gradient {
 export interface ShapeEl extends BaseEl {
   type: 'shape'
   shape: ShapeKind
-  /** SVG path in a 100×100 box (shape === 'path') */
+  /** SVG path in a 100×100 box (shape === 'path'). Several parts may be joined with "|"; a part starting "E:" is
+   *  filled with the even-odd rule (icon sets mix the two rules inside one icon). */
   path?: string
+  /** the size of the box the path is drawn in, when it isn't 100 (Health Icons use 48) */
+  box?: number
   fill: string
   gradient?: Gradient | null
   stroke?: { color: string; width: number; dash?: number[] } | null
@@ -131,7 +137,31 @@ export interface ShapeEl extends BaseEl {
   shadow?: Shadow | null
 }
 
-export type El = TextEl | ImageEl | ShapeEl
+/** Light effects drawn in code (engine/effects.ts): no image file, any colour, sharp at any size. */
+export type EffectKind = 'flare' | 'glow' | 'leak' | 'bokeh' | 'sparkles'
+export interface EffectSpec {
+  kind: EffectKind
+  /** main colour (hex) and an optional second colour (flare ghosts, light leak, bokeh) */
+  color: string
+  color2?: string
+  /** 0..1 */
+  intensity: number
+  /** flare: the horizontal streak, how many rays, the ghost circles */
+  streak?: boolean
+  rays?: number
+  ghosts?: boolean
+  /** flare ghosts / light leak direction, degrees (0 = to the right, 90 = down) */
+  angle?: number
+  /** bokeh / sparkles: how many, and the seed that fixes where they land */
+  count?: number
+  seed?: number
+}
+export interface EffectEl extends BaseEl {
+  type: 'effect'
+  fx: EffectSpec
+}
+
+export type El = TextEl | ImageEl | ShapeEl | EffectEl
 
 export interface PageBg {
   color: string
@@ -257,6 +287,10 @@ export function shape(kind: ShapeKind, o: Partial<ShapeEl>): ShapeEl {
     radius: 0,
     ...o,
   } as ShapeEl
+}
+
+export function effect(o: Partial<EffectEl> & { fx: EffectSpec }): EffectEl {
+  return { ...base(o), type: 'effect', ...o } as EffectEl
 }
 
 export function page(o: Partial<Page> = {}): Page {

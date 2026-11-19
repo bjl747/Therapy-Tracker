@@ -62,6 +62,8 @@ function square(): TemplateLayout {
         elements: [
           image({ x: 0, y: 0, w: 1080, h: 300, bind: 'location', name: 'City photo', kenBurns: true, anim: anim('fade', 0, 0.8) }),
           shape('rect', { x: 0, y: 120, w: 1080, h: 190, fill: BRAND.navy, gradient: { type: 'linear', angle: 180, stops: [{ at: 0, color: 'rgba(12,24,77,0)' }, { at: 1, color: BRAND.navy }] } }),
+          // navy tile behind the logo: the official logo is transparent with white lettering, and this one sits on the photo
+          shape('rect', { x: 44, y: 24, w: 262, h: 106, fill: BRAND.navy, radius: 18, locked: true, name: 'Logo tile' }),
           image({ src: LOGOS.gqr.src, x: 60, y: 36, w: 228, h: 81, fit: 'contain', locked: true, name: 'GQR logo' }),
           T({ x: 60, y: 196, w: 960, h: 80, text: '{{headline}}', style: { size: 64, weight: 900, letterSpacing: -0.5 }, anim: anim('rise', 0.2) }),
           T({ x: 60, y: 276, w: 600, h: 30, text: '{{job_type}}', locked: true, color: BRAND.pink, fit: 'fixed', style: { size: 22, weight: 800, letterSpacing: 2 }, anim: anim('fade', 0.4) }),
@@ -112,6 +114,7 @@ export const HOT_JOBS_ROUNDUP: TemplateDef = {
   defaultSize: 'square',
   builtIn: true,
   kitMode: 'roundup',
+  version: 2, // 2 = official transparent logos (a navy tile behind the square's logo), 2026-11-18
 }
 
 /** roundup fields from a list of jobs (first five) */

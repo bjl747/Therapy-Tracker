@@ -101,6 +101,9 @@ export function docColors(d: Design, limit = 12): string[] {
         add(el.fill)
         add(el.stroke?.color)
         el.gradient?.stops.forEach((s) => add(s.color))
+      } else if (el.type === 'effect') {
+        add(el.fx.color)
+        add(el.fx.color2)
       } else {
         add(el.filters.overlay?.color)
       }

@@ -100,6 +100,7 @@ function scaledProps(el: El, s: number): Partial<El> {
     } as Partial<TextEl>
   }
   if (el.type === 'image') return { radius: r1(el.radius * s) } as Partial<ImageEl>
+  if (el.type === 'effect') return {}
   return el.shape === 'rect' ? ({ radius: r1(el.radius * s) } as Partial<El>) : {}
 }
 

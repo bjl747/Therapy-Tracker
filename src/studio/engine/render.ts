@@ -6,7 +6,8 @@
 
 import { isDrawn, type Anim, type Design, type El, type Gradient, type ImageEl, type Page, type ShapeEl, type TextEl } from './model'
 import { resolveText } from './fields'
-import { fontString, layoutText, type TextLayout } from './text'
+import { fontString, inlineUnderline, layoutText, type TextLayout } from './text'
+import { drawEffect } from './effects'
 import { filtered, getImage, loadImage, sizeOf } from './images'
 
 type Ctx = CanvasRenderingContext2D
@@ -45,16 +46,22 @@ function mctx(): Ctx {
 }
 const hasLetterSpacing = typeof CanvasRenderingContext2D !== 'undefined' && 'letterSpacing' in CanvasRenderingContext2D.prototype
 
-export function measure(text: string, font: string, ls: number): number {
+const setKerning = (c: Ctx, on: boolean) => {
+  if ('fontKerning' in c) (c as Ctx & { fontKerning: string }).fontKerning = on ? 'auto' : 'none'
+}
+
+export function measure(text: string, font: string, ls: number, kerning = true): number {
   const c = mctx()
   c.font = font
+  setKerning(c, kerning)
   if (hasLetterSpacing) (c as Ctx & { letterSpacing: string }).letterSpacing = `${ls}px`
   const w = c.measureText(text).width
   return hasLetterSpacing ? w : w + ls * Math.max(0, text.length - 1)
 }
 
 const layoutCache = new Map<string, TextLayout>()
-export function textLayout(el: TextEl, text: string): TextLayout {
+export function textLayout(el: TextEl, rawText: string): TextLayout {
+  const text = inlineUnderline(rawText).plain // `__run__` marks don't take up room
   const key = `${text}|${JSON.stringify(el.style)}|${el.w}|${el.h}|${el.fit}|${el.minSize ?? ''}`
   let l = layoutCache.get(key)
   if (!l) {
@@ -213,20 +220,44 @@ function drawShape(ctx: Ctx, el: ShapeEl, scale: number) {
   }
   applyShadow(ctx, el.shadow, scale)
   if (el.shape === 'path' && el.path) {
-    let p = pathCache.get(el.path)
-    if (!p) {
-      p = new Path2D(el.path)
-      pathCache.set(el.path, p)
+    const box = el.box && el.box > 0 ? el.box : 100
+    // "|" joins parts; "E:" marks a part filled with the even-odd rule
+    for (const part of el.path.split('|')) {
+      const even = part.startsWith('E:')
+      const d = even ? part.slice(2) : part
+      let p = pathCache.get(d)
+      if (!p) {
+        p = new Path2D(d)
+        if (pathCache.size > 4000) pathCache.clear()
+        pathCache.set(d, p)
+      }
+      if (el.fill !== 'transparent') {
+        ctx.save()
+        ctx.scale(w / box, h / box)
+        ctx.fill(p, even ? 'evenodd' : 'nonzero')
+        ctx.restore()
+      }
+      if (el.stroke && el.stroke.width > 0) {
+        // stroke the stretched outline, not a stretched stroke: the line keeps one thickness whatever the box's shape
+        ctx.shadowColor = 'transparent'
+        ctx.strokeStyle = el.stroke.color
+        ctx.lineWidth = el.stroke.width
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        if (el.stroke.dash) ctx.setLineDash(el.stroke.dash)
+        if (typeof DOMMatrix !== 'undefined') {
+          const tp = new Path2D()
+          tp.addPath(p, new DOMMatrix([w / box, 0, 0, h / box, 0, 0]))
+          ctx.stroke(tp)
+        } else {
+          ctx.save()
+          ctx.scale(w / box, h / box)
+          ctx.lineWidth = el.stroke.width / (w / box)
+          ctx.stroke(p)
+          ctx.restore()
+        }
+      }
     }
-    ctx.save()
-    ctx.scale(w / 100, h / 100)
-    if (el.fill !== 'transparent') ctx.fill(p)
-    if (el.stroke) {
-      ctx.lineWidth = el.stroke.width / (w / 100)
-      ctx.strokeStyle = el.stroke.color
-      ctx.stroke(p)
-    }
-    ctx.restore()
     return
   }
   if (el.shape === 'rect') roundRect(ctx, 0, 0, w, h, el.radius)
@@ -248,6 +279,28 @@ function drawShape(ctx: Ctx, el: ShapeEl, scale: number) {
     if (el.stroke.dash) ctx.setLineDash(el.stroke.dash)
     ctx.stroke()
   }
+}
+
+/** A logo drawn at under half its file size in one step goes soft (the thin "Healthcare" under the GQR mark). Halve it
+ *  in steps first and scale the last bit; the halves are kept per picture. `ratio` = drawn pixels ÷ file pixels. */
+const halves = new WeakMap<object, HTMLCanvasElement[]>()
+function halved(img: CanvasImageSource, iw: number, ih: number, ratio: number): CanvasImageSource {
+  if (!(ratio > 0) || ratio > 0.5 || typeof document === 'undefined') return img
+  const n = Math.min(3, Math.floor(Math.log2(1 / ratio))) // how many clean halvings fit above the drawn size
+  let list = halves.get(img as object)
+  if (!list) halves.set(img as object, (list = []))
+  for (let i = list.length; i < n; i++) {
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round(iw / 2 ** (i + 1)))
+    c.height = Math.max(1, Math.round(ih / 2 ** (i + 1)))
+    const x = c.getContext('2d')
+    if (!x) return img
+    x.imageSmoothingEnabled = true
+    x.imageSmoothingQuality = 'high'
+    x.drawImage(i ? list[i - 1] : img, 0, 0, c.width, c.height)
+    list.push(c)
+  }
+  return list[n - 1] ?? img
 }
 
 /** source rectangle for a cover/contain crop around a focal point */
@@ -282,6 +335,9 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
   ctx.save()
   roundRect(ctx, 0, 0, w, h, el.radius)
   ctx.clip()
+  // best-quality scaling: logos are drawn at about a third of their file size, where the default goes soft
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   if (!raw) {
     if (src) void loadImage(src)
     // placeholder while loading / when empty. A bound photo with no match
@@ -312,7 +368,7 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
   }
   if (el.fit === 'contain') {
     const s = Math.min(w / iw, h / ih)
-    ctx.drawImage(img, (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s)
+    ctx.drawImage(halved(img, iw, ih, s * opts.scale), (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s)
   } else {
     // Ken Burns: slow zoom toward the focal point over the page
     const zoom = el.zoom * (kenT !== null ? 1 + 0.12 * kenT : 1)
@@ -330,6 +386,12 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
 function drawText(ctx: Ctx, el: TextEl, design: Design, opts: RenderOptions) {
   const raw = resolveText(el.text, design.fields, opts.showMissing)
   const l = textLayout(el, raw)
+  // underlined runs (`__run__`), as positions in the text the lines were cut from
+  const inline = inlineUnderline(raw)
+  const flat = el.style.upper ? inline.plain.toUpperCase() : inline.plain
+  // upper-casing can change a text's length (ß → SS); the ranges no longer line up then, so skip them
+  const runs = flat.length === inline.plain.length ? inline.ranges : []
+  let cursor = 0
   const { w, h } = el
   if (el.bg) {
     ctx.fillStyle = el.bg.color
@@ -337,6 +399,7 @@ function drawText(ctx: Ctx, el: TextEl, design: Design, opts: RenderOptions) {
     ctx.fill()
   }
   ctx.font = fontString(el.style, l.size)
+  setKerning(ctx, el.style.kerning !== false)
   const ls = el.style.letterSpacing * (l.size / el.style.size || 1)
   if (hasLetterSpacing) (ctx as Ctx & { letterSpacing: string }).letterSpacing = `${ls}px`
   ctx.textBaseline = 'alphabetic'
@@ -369,6 +432,23 @@ function drawText(ctx: Ctx, el: TextEl, design: Design, opts: RenderOptions) {
     }
     if (el.style.underline) {
       ctx.fillRect(x, y + l.size * 0.12, line.width, Math.max(1, l.size * 0.06))
+    } else if (runs.length) {
+      const at = flat.indexOf(line.text, cursor)
+      if (at >= 0) {
+        cursor = at + line.text.length
+        // width of the line's first n characters, letter spacing included (also where the browser can't space canvas text)
+        const wTo = (n: number) => {
+          const part = line.text.slice(0, Math.max(0, Math.min(line.text.length, n)))
+          return ctx.measureText(part).width + (hasLetterSpacing ? 0 : ls * Math.max(0, part.length - 1))
+        }
+        // slanted text: the line sits under where the letters' feet are, a touch to the left (measured on the official post)
+        const lean = el.style.italic ? l.size * 0.05 : 0
+        for (const [a, b] of runs) {
+          if (b <= at || a >= at + line.text.length) continue
+          const x0 = wTo(a - at)
+          ctx.fillRect(x + x0 - lean, y + l.size * 0.12, wTo(b - at) - x0, Math.max(1, l.size * 0.06))
+        }
+      }
     }
   })
   if (hasLetterSpacing) (ctx as Ctx & { letterSpacing: string }).letterSpacing = '0px'
@@ -385,6 +465,7 @@ export function drawElement(ctx: Ctx, el: El, design: Design, opts: RenderOption
   if (a.scale !== 1) ctx.scale(a.scale, a.scale)
   ctx.translate(-el.w / 2, -el.h / 2)
   if (el.type === 'shape') drawShape(ctx, el, opts.scale)
+  else if (el.type === 'effect') drawEffect(ctx, el.fx, 0, 0, el.w, el.h)
   else if (el.type === 'image') {
     const kenT = el.kenBurns && opts.time !== undefined ? Math.min(1, opts.time / Math.max(0.1, pageDuration)) : null
     drawImage(ctx, el, design, opts, kenT)

@@ -23,6 +23,9 @@ export interface TemplateDef {
   builtIn?: boolean
   /** set on a built-in that an admin has changed (UI shows "Reset to original") */
   overridesBuiltIn?: boolean
+  /** Design version of a built-in (missing = 1). When the built-in's design is replaced in code the number goes up, and a
+   *  saved copy made from an older design gives way to the new layouts but keeps its field wording (see store.ts). */
+  version?: number
   /** 'roundup' = several jobs in one post (Many jobs → Roundup post); default 'job' */
   kitMode?: 'job' | 'roundup'
   updatedAt?: number

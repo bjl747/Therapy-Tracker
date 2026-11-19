@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, Shapes, Type, Unlock } from 'lucide-react'
+import { Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, Shapes, Sparkles, Type, Unlock } from 'lucide-react'
 import { isDrawn, type El } from '../../engine/model'
 import { currentPage, useEditor } from '../store'
 import { elLabel } from '../lint'
@@ -42,7 +42,7 @@ export function LayersPanel() {
         {rows.map((el, i) => {
           const selected = selection.includes(el.id)
           const lockedOut = readOnly || (!!el.locked && !canEditLocked)
-          const Icon = el.type === 'text' ? Type : el.type === 'image' ? ImageIcon : Shapes
+          const Icon = el.type === 'text' ? Type : el.type === 'image' ? ImageIcon : el.type === 'effect' ? Sparkles : Shapes
           // conditional row (roundup) switched off: listed, but dimmed and explained
           const waiting = !el.hidden && !!el.showIf && !isDrawn(el, fields ?? {})
           const waitingNote = waiting ? `Shown when ${fieldDefs?.find((f) => f.key === el.showIf)?.label ?? el.showIf} is filled` : undefined

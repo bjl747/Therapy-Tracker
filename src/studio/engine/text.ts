@@ -3,7 +3,8 @@
 
 import type { TextStyle } from './model'
 
-export type Measure = (text: string, font: string, letterSpacing: number) => number
+/** `kerning` false = plain letter widths (TextStyle.kerning); a measure function may ignore it */
+export type Measure = (text: string, font: string, letterSpacing: number, kerning?: boolean) => number
 
 export interface TextLayout {
   lines: { text: string; width: number }[]
@@ -13,6 +14,23 @@ export interface TextLayout {
   height: number
   /** doesn't fit even at the minimum size */
   overflow: boolean
+}
+
+/** `__text__` inside a text underlines just that run (the wage blanks on the job post: "$__ 39 __"). A row of plain
+ *  underscores ("______") is left alone. Returns the text without the marks and the underlined ranges in it. */
+export function inlineUnderline(raw: string): { plain: string; ranges: [number, number][] } {
+  if (!raw.includes('__')) return { plain: raw, ranges: [] }
+  const ranges: [number, number][] = []
+  let plain = ''
+  let last = 0
+  // a run may hold single underscores (the editor's ‹wage_low› placeholder), never a double one
+  for (const m of raw.matchAll(/__((?:[^_]|_(?!_))+?)__/g)) {
+    plain += raw.slice(last, m.index)
+    ranges.push([plain.length, plain.length + m[1].length])
+    plain += m[1]
+    last = m.index + m[0].length
+  }
+  return { plain: plain + raw.slice(last), ranges }
 }
 
 export function fontString(style: TextStyle, size: number): string {
@@ -36,10 +54,11 @@ export function wrap(text: string, maxW: number, measureLine: (t: string) => num
     return chunk
   }
   for (const para of text.split('\n')) {
-    const words = para.split(/(\s+)/).filter((w) => w.length > 0)
+    // break at ordinary spaces only: a non-breaking space (\u00A0) keeps its neighbours on one line
+    const words = para.split(/([ \t]+)/).filter((w) => w.length > 0)
     let line = ''
     for (const word of words) {
-      const isSpace = /^\s+$/.test(word)
+      const isSpace = /^[ \t]+$/.test(word)
       const candidate = line + word
       if (!line || measureLine(candidate.trimEnd()) <= maxW) {
         if (!isSpace && measureLine(line ? candidate.trimEnd() : word) > maxW) {
@@ -61,7 +80,7 @@ export function wrap(text: string, maxW: number, measureLine: (t: string) => num
 function layoutAt(text: string, style: TextStyle, size: number, w: number, measure: Measure) {
   const font = fontString(style, size)
   const ls = style.letterSpacing * (size / style.size || 1)
-  const m = (t: string) => measure(t, font, ls)
+  const m = (t: string) => measure(t, font, ls, style.kerning !== false)
   const lines = wrap(text, w, m)
   const lineHeight = size * style.lineHeight
   // a word that had to be broken mid-word counts as "not fitting"

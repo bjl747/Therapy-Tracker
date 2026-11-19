@@ -30,7 +30,7 @@ import {
   Underline,
   Upload,
 } from 'lucide-react'
-import type { El, Gradient, ImageEl, ImageFilters, Shadow, ShapeEl, TextEl, TextStyle } from '../engine/model'
+import type { EffectEl, EffectSpec, El, Gradient, ImageEl, ImageFilters, Shadow, ShapeEl, TextEl, TextStyle } from '../engine/model'
 import type { AlignKind } from '../engine/geometry'
 import { ensureFont, ensureFontsFor, FONTS } from '../engine/fonts'
 import { repo } from '../data'
@@ -69,7 +69,7 @@ export function Inspector() {
     useEditor.getState().updateEls(p)
   }
   const title = els.length === 1 ? elLabel(els[0], design.fields) : `${els.length} elements`
-  const typeName = type === 'text' ? 'Text' : type === 'image' ? 'Image' : type === 'shape' ? 'Shape' : 'Mixed'
+  const typeName = type === 'text' ? 'Text' : type === 'image' ? 'Image' : type === 'shape' ? 'Shape' : type === 'effect' ? 'Light effect' : 'Mixed'
 
   return (
     <div>
@@ -95,6 +95,7 @@ export function Inspector() {
           {type === 'text' && <TextSection els={els as TextEl[]} patchAll={patchAll} />}
           {type === 'image' && <ImageSection els={els as ImageEl[]} patchAll={patchAll} />}
           {type === 'shape' && <ShapeSection els={els as ShapeEl[]} patchAll={patchAll} />}
+          {type === 'effect' && <EffectSection els={els as EffectEl[]} patchAll={patchAll} />}
         </>
       )}
     </div>
@@ -617,6 +618,61 @@ function ShapeSection({ els, patchAll }: { els: ShapeEl[]; patchAll: (fn: (e: El
         </Section>
       )}
     </>
+  )
+}
+
+// ── light effect ────────────────────────────────────────────
+
+function EffectSection({ els, patchAll }: { els: EffectEl[]; patchAll: (fn: (e: El) => Patch | null) => void }) {
+  const fx = els[0].fx
+  const set = (p: Partial<EffectSpec>) => patchAll((e) => (e.type === 'effect' ? ({ fx: { ...e.fx, ...p } } as Patch) : null))
+  const two = fx.kind === 'flare' || fx.kind === 'leak' || fx.kind === 'bokeh'
+  const scattered = fx.kind === 'bokeh' || fx.kind === 'sparkles'
+  return (
+    <Section title="Light">
+      <Row label="Colour">
+        <ColorField title="Light colour" value={fx.color} onChange={(c) => set({ color: c ?? '#FFFFFF' })} />
+      </Row>
+      {two && (
+        <Row label="Second">
+          <ColorField title="Second colour" allowNone value={fx.color2 ?? null} onChange={(c) => set({ color2: c ?? undefined })} />
+        </Row>
+      )}
+      <Row label="Strength">
+        <SliderNum title="How strong the light is" min={0} max={100} suffix="%" value={Math.round(fx.intensity * 100)} onChange={(v) => set({ intensity: v / 100 })} />
+      </Row>
+      {fx.kind === 'flare' && (
+        <>
+          <Row label="Streak">
+            <Toggle label="Horizontal streak" checked={!!fx.streak} onChange={(v) => set({ streak: v })} />
+          </Row>
+          <Row label="Rays">
+            <SliderNum title="Rays of light" min={0} max={24} value={fx.rays ?? 0} onChange={(v) => set({ rays: v })} />
+          </Row>
+          <Row label="Ghosts">
+            <Toggle label="Ghost circles" checked={!!fx.ghosts} onChange={(v) => set({ ghosts: v })} />
+          </Row>
+        </>
+      )}
+      {(fx.kind === 'leak' || (fx.kind === 'flare' && fx.ghosts)) && (
+        <Row label="Direction">
+          <SliderNum title={fx.kind === 'leak' ? 'Which side the light comes from' : 'Which way the ghost circles trail'} min={0} max={360} suffix="°" value={Math.round(fx.angle ?? (fx.kind === 'leak' ? 0 : 135))} onChange={(v) => set({ angle: v })} />
+        </Row>
+      )}
+      {scattered && (
+        <>
+          <Row label="How many">
+            <SliderNum title="How many" min={1} max={40} value={fx.count ?? (fx.kind === 'bokeh' ? 14 : 10)} onChange={(v) => set({ count: v })} />
+          </Row>
+          <Row label="Layout">
+            <button type="button" className="chip hover:border-accent/50" onClick={() => set({ seed: ((fx.seed ?? 1) * 7 + 13) % 9973 })} title="Scatter them differently">
+              Shuffle
+            </button>
+          </Row>
+        </>
+      )}
+      <p className="px-0.5 pt-1 text-[11.5px] leading-snug text-ink-3">Light adds to what is under it, so it shows on dark backgrounds and photos, not on white.</p>
+    </Section>
   )
 }
 
