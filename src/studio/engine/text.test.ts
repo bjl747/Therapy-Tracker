@@ -89,3 +89,15 @@ describe('layoutText', () => {
     expect([...spacings].some((s) => s < 4)).toBe(true)
   })
 })
+
+describe('inline underline (__run__)', () => {
+  it('takes the marks out and reports where the run is', async () => {
+    const { inlineUnderline } = await import('./text')
+    expect(inlineUnderline('wage of $__ 39 __ – $__ 57 __/hr')).toEqual({ plain: 'wage of $ 39  – $ 57 /hr', ranges: [[9, 13], [17, 21]] })
+  })
+  it('leaves plain text and rows of underscores alone', async () => {
+    const { inlineUnderline } = await import('./text')
+    expect(inlineUnderline('Name: ______')).toEqual({ plain: 'Name: ______', ranges: [] })
+    expect(inlineUnderline('no marks')).toEqual({ plain: 'no marks', ranges: [] })
+  })
+})

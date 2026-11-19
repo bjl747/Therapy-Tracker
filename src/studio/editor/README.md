@@ -86,16 +86,17 @@ click (select / toggle / double-click to enter).
 | `viewport.ts` | pure: view math, fit, zoom-around-cursor, handles, snapping helpers (tested) |
 | `store.ts` | document store, history, brand locks (unchanged) |
 | `uiStore.ts` | chrome state + `stageApi` |
-| `actions.ts` | commands: add text/image/shape/badge, clipboard, layers, auto-animate |
+| `actions.ts` | commands: add text/image/shape/badge/light effect, clipboard, layers, auto-animate |
 | `clipboard.ts` | pure: copy / paste offsets, fresh ids, group remap (tested) |
 | `lint.ts` | pure: "Ready to post" checks (tested) |
 | `colors.ts` | pure: parsing, WCAG contrast, document palette, brand palette (tested) |
 | `ui.tsx` | Popover / Modal with a shared Esc stack, NumField (scrub), Slider, ColorField, menus |
-| `Inspector.tsx` | layout + text / image / shape / page controls |
+| `Inspector.tsx` | layout + text / image / shape / light effect / page controls |
 | `TopBar.tsx` | top bar, zoom menu, lint badge, export panel, preview player |
 | `Menus.tsx` | context menu, command palette |
 | `PageStrip.tsx` | page thumbnails |
-| `panels/*` | left panels |
+| `panels/*` | left panels (`ElementLibrary.tsx`: light effects, more shapes, icon library, stickers; files under `public/studio/`) |
+| `shapeLibrary.ts` | the 37 extra shapes, each one path in a 100 box (tested) |
 | `hooks.ts` | city data, asset tick, selection, width |
 
 Engine addition: `RenderOptions.origin` (render.ts). Tests added for

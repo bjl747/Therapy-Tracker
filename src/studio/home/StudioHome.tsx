@@ -352,9 +352,9 @@ function BrandTab({ canEdit }: { canEdit: boolean }) {
     }
   }
   const builtIn = [
-    { name: 'GQR Healthcare logo', url: '/brand/gqr-healthcare.png' },
-    { name: 'UnitiMed logo', url: '/brand/unitimed.png' },
-    { name: 'BluePipes 2026 badge', url: '/brand/bluepipes-2026-badge.png' },
+    { name: 'GQR Healthcare logo', url: '/brand/gqr-healthcare-white.png' },
+    { name: 'UnitiMed logo', url: '/brand/unitimed-white.png' },
+    { name: 'BluePipes 2026 badge', url: '/brand/bluepipes-2026-badge-clear.png' },
   ]
   const palette = ['#0C184D', '#18255E', '#2940DA', '#12C4D1', '#2BBACC', '#E74599', '#9A9FC4', '#FFFFFF']
   return (
@@ -385,7 +385,7 @@ function BrandTab({ canEdit }: { canEdit: boolean }) {
                 <img src={a.url} alt="" className="max-w-full max-h-full object-contain" />
               </div>
               <div className="text-[12px] font-semibold mt-1.5 truncate">{a.name}</div>
-              <div className="text-[11px] text-ink-3">Built in · placeholder</div>
+              <div className="text-[11px] text-ink-3">Built in · official, transparent</div>
             </div>
           ))}
           {(assets ?? []).map((a) => (

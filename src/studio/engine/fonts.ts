@@ -25,8 +25,18 @@ const f = (name: string, weight: string, style: 'normal' | 'italic' = 'normal'):
   weight,
   style,
 });
+/** a TrueType file (Liberation Sans ships as .ttf) */
+const ttf = (name: string, weight: string, style: 'normal' | 'italic' = 'normal'): FontFile => ({ url: `/fonts/${name}.ttf`, weight, style });
 
 export const FONTS: FontDef[] = [
+  {
+    // The job post's typeface (BJ, 2026-11-18: match the official post). Liberation Sans has Arial's exact letter widths
+    // and near-identical shapes; Arial itself is licensed and can't be bundled. The files are the ones pdf.js already
+    // ships (public/pdfjs/standard_fonts, licence LICENSE_LIBERATION there: GPL v2 with the font exception).
+    family: 'Liberation Sans', category: 'sans', weights: [400, 700], italic: true,
+    files: [ttf('liberation-sans-regular', '400'), ttf('liberation-sans-bold', '700'), ttf('liberation-sans-italic', '400', 'italic'), ttf('liberation-sans-bolditalic', '700', 'italic')],
+    standInFor: 'Arial',
+  },
   {
     family: 'Inter', category: 'sans', weights: [400, 500, 600, 700, 800, 900], italic: true,
     files: [f('inter-normal', '400 900'), f('inter-italic', '400 900', 'italic')],
@@ -163,7 +173,7 @@ function loadFile(family: string, file: FontFile): Promise<void> {
   if (existing) return existing;
   const p = (async () => {
     try {
-      const face = new FontFace(family, `url(${file.url}) format('woff2')`, {
+      const face = new FontFace(family, `url(${file.url}) format('${file.url.endsWith('.ttf') ? 'truetype' : 'woff2'}')`, {
         weight: file.weight,
         style: file.style,
         display: 'swap',

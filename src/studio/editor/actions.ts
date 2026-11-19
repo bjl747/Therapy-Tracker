@@ -1,6 +1,6 @@
 // Editor commands shared by the keyboard, menus, panels and the palette.
 
-import { image, shape, text, uid, type Anim, type Design, type El, type ImageEl, type ShapeEl, type ShapeKind, type TextEl, type TextStyle } from '../engine/model'
+import { effect, image, shape, text, uid, type Anim, type Design, type EffectSpec, type El, type ImageEl, type ShapeEl, type ShapeKind, type TextEl, type TextStyle } from '../engine/model'
 import { markerKeys } from '../engine/fields'
 import { aabb, type Pt } from '../engine/geometry'
 import { ensureFont } from '../engine/fonts'
@@ -98,9 +98,10 @@ export function addImage(src: string, natural: { w: number; h: number }, o: Part
   const nw = Math.max(1, natural.w)
   const nh = Math.max(1, natural.h)
   const k = Math.min((d.w * 0.6) / nw, (d.h * 0.6) / nh)
-  const w = Math.round(nw * k)
-  const h = Math.round(nh * k)
-  s.addEl(image({ ...place(w, h, at), w, h, src, focus: { x: 0.5, y: 0.5 }, ...rest }))
+  // a caller that knows the size it wants (stickers) passes w / h; everything else lands at 60% of the page
+  const w = rest.w ?? Math.round(nw * k)
+  const h = rest.h ?? Math.round(nh * k)
+  s.addEl(image({ ...place(w, h, at), src, focus: { x: 0.5, y: 0.5 }, ...rest, w, h }))
 }
 
 export function addShape(kind: ShapeKind, o: Partial<ShapeEl> = {}): void {
@@ -111,6 +112,17 @@ export function addShape(kind: ShapeKind, o: Partial<ShapeEl> = {}): void {
   const w = o.w ?? unit
   const h = o.h ?? unit
   s.addEl(shape(kind, { ...place(w, h), w, h, ...o }))
+}
+
+/** a light effect (lens flare, glow, light leak, bokeh, sparkles): drawn in code, see engine/effects.ts */
+export function addEffect(fx: EffectSpec, o: { w?: number; h?: number; name?: string } = {}): void {
+  const s = ed()
+  const d = s.design
+  if (!d || s.readOnly) return
+  const unit = Math.round(Math.min(d.w, d.h) * 0.55)
+  const w = o.w ?? unit
+  const h = o.h ?? unit
+  s.addEl(effect({ ...place(w, h), w, h, fx, name: o.name }))
 }
 
 /** pill / badge: a text element with a highlight behind it */

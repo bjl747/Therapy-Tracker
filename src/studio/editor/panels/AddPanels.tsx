@@ -11,6 +11,7 @@ import { useEditor } from '../store'
 import { addBadge, addImage, addShape, addText, addTextPair, toast, uploadError } from '../actions'
 import { useCityData } from '../hooks'
 import { Section, Skeleton } from '../ui'
+import { IconLibrary, LightEffects, MoreShapes, Stickers } from './ElementLibrary'
 
 // ── Text ────────────────────────────────────────────────────
 
@@ -119,9 +120,9 @@ export function PhotosPanel() {
 // ── Brand ───────────────────────────────────────────────────
 
 const BUILT_IN = [
-  { url: '/brand/gqr-healthcare.png', name: 'GQR Healthcare' },
-  { url: '/brand/unitimed.png', name: 'Unitimed' },
-  { url: '/brand/bluepipes-2026-badge.png', name: 'BluePipes 2026 badge' },
+  { url: '/brand/gqr-healthcare-white.png', name: 'GQR Healthcare' },
+  { url: '/brand/unitimed-white.png', name: 'Unitimed' },
+  { url: '/brand/bluepipes-2026-badge-clear.png', name: 'BluePipes 2026 badge' },
 ]
 
 export function BrandPanel() {
@@ -168,7 +169,8 @@ export function BrandPanel() {
       <Section title="Brand logos">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
           {BUILT_IN.map((b) => (
-            <button key={b.url} type="button" disabled={readOnly} className={tile} style={checker} title={b.name} onClick={() => void addStatic(b.url, b.name)}>
+            // navy behind them: the official logos are transparent with white lettering
+            <button key={b.url} type="button" disabled={readOnly} className={tile} style={{ background: '#0C184D' }} title={b.name} onClick={() => void addStatic(b.url, b.name)}>
               <img src={b.url} alt={b.name} className="max-h-full max-w-full object-contain" loading="lazy" />
             </button>
           ))}
@@ -293,7 +295,9 @@ export function ElementsPanel() {
           ))}
         </div>
       </Section>
-      <Section title="Icons">
+      <LightEffects />
+      <MoreShapes />
+      <Section title="Quick icons">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(58px, 1fr))' }}>
           {ICON_PATHS.map((ic) => (
             <button
@@ -312,6 +316,8 @@ export function ElementsPanel() {
           ))}
         </div>
       </Section>
+      <IconLibrary />
+      <Stickers />
       <Section title="Pills & badges">
         <div className="flex flex-wrap gap-2">
           {[

@@ -4,7 +4,7 @@
 import { isDrawn, type Design, type El, type Page, type TextEl } from '../engine/model'
 import { missingKeys, resolveText } from '../engine/fields'
 import { aabb, hitEl, type Rect } from '../engine/geometry'
-import { layoutText, type Measure } from '../engine/text'
+import { inlineUnderline, layoutText, type Measure } from '../engine/text'
 import { contrastRatio, gradientColor, parseColor } from './colors'
 
 export type LintKind = 'overflow' | 'missing' | 'outside' | 'contrast' | 'small'
@@ -32,6 +32,7 @@ export function elLabel(el: El, fields: Record<string, string> = {}): string {
     return t.length > 28 ? `${t.slice(0, 27)}…` : t || 'Text'
   }
   if (el.type === 'image') return el.bind ? `Photo (${el.bind})` : 'Image'
+  if (el.type === 'effect') return { flare: 'Lens flare', glow: 'Glow', leak: 'Light leak', bokeh: 'Bokeh', sparkles: 'Sparkles' }[el.fx.kind]
   return { rect: 'Rectangle', ellipse: 'Circle', line: 'Line', triangle: 'Triangle', star: 'Star', path: 'Icon' }[el.shape]
 }
 
@@ -54,6 +55,7 @@ export function backdropColor(page: Page, el: TextEl, fields?: Record<string, st
     if (!isDrawn(under, fields) || under.opacity < 0.05 || !hitEl(under, c)) continue
     if (under.type === 'image') return null
     if (under.type === 'text') continue
+    if (under.type === 'effect') continue // light over the background, not a background of its own
     if (under.shape === 'line' || under.shape === 'path' || under.shape === 'star' || under.shape === 'triangle') continue
     if (under.opacity < 0.9) return null
     if (under.gradient) return gradientColor(under.gradient)
@@ -93,7 +95,8 @@ export function lintPage(design: Design, pageIndex: number, measure: Measure): L
 
     if (!inside(box, design)) add(el, 'outside', 'warn', 'Text runs past the edge of the page')
 
-    const l = layoutText(txt, el.style, { w: el.w, h: el.h }, el.fit, measure, el.minSize)
+    // measured the way it is drawn: `__run__` marks taken out (layoutText passes the element's kerning to `measure`)
+    const l = layoutText(inlineUnderline(txt).plain, el.style, { w: el.w, h: el.h }, el.fit, measure, el.minSize)
     if (l.overflow)
       add(el, 'overflow', 'error', el.fit === 'shrink' ? 'Text does not fit its box even at the smallest size' : 'Text overflows its box')
 

@@ -4,6 +4,9 @@
 // saved through the repo (hub: hub_studio/templates/rows/{id}, admin-only
 // writes). A saved template with the same id as a built-in REPLACES it;
 // "Reset to original" deletes the saved copy.
+// Exception: when a built-in's design is replaced in code (its `version` goes up), a saved copy made from the older design
+// no longer hides it. The new layouts are used, with the saved copy's field wording (locked values such as the website,
+// examples) carried over, so nobody has to reset anything and no wording is lost.
 // ─────────────────────────────────────────────────────────────
 
 import { create } from 'zustand'
@@ -47,7 +50,17 @@ export function effectiveTemplates(saved: TemplateDef[]): TemplateDef[] {
   const byId = new Map(saved.map((t) => [t.id, t]))
   const builtIns = BUILT_IN_TEMPLATES.map((b) => {
     const o = byId.get(b.id)
-    return o ? { ...o, overridesBuiltIn: true as const } : b
+    if (!o) return b
+    if ((o.version ?? 1) < (b.version ?? 1)) {
+      // saved from an older design: the new design, with the saved wording for the fields that still exist
+      const savedField = new Map((o.fieldDefs ?? []).map((f) => [f.key, f]))
+      const fieldDefs = b.fieldDefs.map((f) => {
+        const s = savedField.get(f.key)
+        return s ? { ...f, label: s.label ?? f.label, example: s.example ?? f.example, locked: s.locked ?? f.locked } : f
+      })
+      return { ...b, name: o.name || b.name, description: o.description ?? b.description, fieldDefs, builtIn: false, overridesBuiltIn: true as const }
+    }
+    return { ...o, overridesBuiltIn: true as const }
   })
   const ids = new Set(BUILT_IN_TEMPLATES.map((b) => b.id))
   const custom = saved.filter((t) => !ids.has(t.id)).sort((a, b) => a.name.localeCompare(b.name))

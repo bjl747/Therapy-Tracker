@@ -22,12 +22,24 @@ export function onImageLoaded(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+/** The first brand kit logos were crops of the job post with its navy background baked in. Designs made with them now get
+ *  the official transparent files (BJ, 2026-11-18: "the transparent backgrounds is a big thing"). New names, because
+ *  hosting caches images for a year. */
+const REPLACED: Record<string, string> = {
+  '/brand/gqr-healthcare.png': '/brand/gqr-healthcare-white.png',
+  '/brand/unitimed.png': '/brand/unitimed-white.png',
+  '/brand/bluepipes-2026-badge.png': '/brand/bluepipes-2026-badge-clear.png',
+}
+/** the file a src really loads (see REPLACED) */
+export const currentSrc = (src: string): string => REPLACED[src] ?? src
+
 export function getImage(src: string): Src | null {
-  return loaded.get(src) ?? null
+  return loaded.get(currentSrc(src)) ?? null
 }
 
 /** did the last attempt to load this src fail (and it hasn't loaded since)? */
 export function imageFailed(src: string): boolean {
+  src = currentSrc(src)
   return failed.has(src) && !loaded.has(src)
 }
 
@@ -38,6 +50,7 @@ export function shouldRetry(failedAt: number | undefined, now: number, force = f
 
 export function loadImage(src: string, opts?: { retry?: boolean }): Promise<Src | null> {
   if (!src) return Promise.resolve(null)
+  src = currentSrc(src)
   const hit = loaded.get(src)
   if (hit) return Promise.resolve(hit)
   let p = pending.get(src)
