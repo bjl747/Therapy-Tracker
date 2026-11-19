@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Calculator } from 'lucide-react'
 import { getPayTools, PAY_KEYS, POST_VENDOR, type PayAnswer } from './connectors'
-import { formatDuration, formatMoneyRange, formatShift } from './normalize'
+import { formatDuration, formatMoneyRange, formatShift, shiftLength } from './normalize'
 import { parseLocation } from '../photos/location'
 
 const andList = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
@@ -34,6 +34,8 @@ export function PayCalc({ fields, setFields }: { fields: Record<string, string>;
   const weeks = num(fields[PAY_KEYS.weeks])
   const loc = parseLocation(fields.location ?? '')
   const start = fields.start_date ?? ''
+  // the shift length the post will print ("4x10s" = 10 h), so the pay uses the same one
+  const shiftLen = shiftLength(fields.shift ?? '') ?? undefined
   // a job picked from Hot Jobs: the post's numbers are shown here to double-check, with the post's own fee / NBO. Hot
   // jobs get no pay from guessed details (BJ, 2026-11-18), so what the post is missing is asked for, not defaulted.
   const hot = !!fields[PAY_KEYS.hot]
@@ -60,7 +62,7 @@ export function PayCalc({ fields, setFields }: { fields: Record<string, string>;
     const id = ++run.current
     const t = setTimeout(() => {
       void tools
-        .estimate({ billRate: bill, vendorId: vendorId === POST_VENDOR ? '' : vendorId, fee: postFee, nbo: postNbo, city: loc.city, state: loc.st, zip: zip || undefined, hours, weeks, start })
+        .estimate({ billRate: bill, vendorId: vendorId === POST_VENDOR ? '' : vendorId, fee: postFee, nbo: postNbo, city: loc.city, state: loc.st, zip: zip || undefined, hours, weeks, start, shiftLength: shiftLen })
         .then((a) => {
           if (id !== run.current) return
           setAnswer(a)
@@ -71,12 +73,13 @@ export function PayCalc({ fields, setFields }: { fields: Record<string, string>;
             wage_low: hr(a.hourly[0]),
             wage_high: hr(a.hourly[1]),
             ...(weeks ? { duration: formatDuration(String(weeks)) } : {}),
-            ...(hours && !f.shift?.trim() && shiftFor(hours) ? { shift: formatShift(shiftFor(hours)) } : {}),
+            // a hot job's Shift comes from its description or stays blank: never worked out from the hours (BJ, 2026-11-18)
+            ...(hours && !hot && !f.shift?.trim() && shiftFor(hours) ? { shift: formatShift(shiftFor(hours)) } : {}),
           }))
         }, () => id === run.current && setAnswer({ ok: false, reason: 'Pay couldn’t be worked out' }))
     }, 250)
     return () => clearTimeout(t)
-  }, [tools, blocked, bill, vendorId, postFee, postNbo, zip, hours, weeks, loc?.city, loc?.st, start]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tools, blocked, bill, vendorId, postFee, postNbo, zip, hours, weeks, loc?.city, loc?.st, start, shiftLen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!tools) return null
   const put = (k: string, v: string) => setFields((f) => ({ ...f, [k]: v }))

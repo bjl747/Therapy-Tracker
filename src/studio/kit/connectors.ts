@@ -56,6 +56,8 @@ export interface PayQuote {
   /** a hot job's own fee / NBO text: used instead of the vendor's (and on their own when the vendor was typed by hand) */
   fee?: string
   nbo?: string
+  /** hours in one shift, read off the form's Shift field ("4x10s" → 10); matters in daily-overtime states */
+  shiftLength?: number
 }
 export type PayAnswer =
   | { ok: true; weekly: [number, number]; hourly: [number, number]; note: string }
