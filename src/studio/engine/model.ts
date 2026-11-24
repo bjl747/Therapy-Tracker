@@ -93,6 +93,9 @@ export interface ImageFilters {
   overlay?: { color: string; opacity: number } | null
 }
 
+/** photo frame shape (BJ, 2026-11-19): 'rect' is the plain frame rounded by `radius`; engine/frames.ts */
+export type FrameShape = 'rect' | 'circle' | 'arch' | 'pill' | 'hexagon' | 'heart' | 'blob'
+
 export interface ImageEl extends BaseEl {
   type: 'image'
   src: string
@@ -105,6 +108,11 @@ export interface ImageEl extends BaseEl {
   focus: { x: number; y: number }
   /** extra zoom inside the frame (1 = cover) */
   zoom: number
+  /** the frame's shape (missing = 'rect') */
+  frame?: FrameShape
+  /** the picture Crop set `focus` for. A photo that follows a field (the city photo) keeps the crop only while it
+   *  shows that same picture; another city brings that photo's own focal point back. */
+  cropFor?: string
   filters: ImageFilters
   /** slow pan/zoom in GIF exports */
   kenBurns?: boolean

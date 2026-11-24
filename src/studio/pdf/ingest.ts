@@ -1,34 +1,66 @@
 /** Reads dropped / picked files into the store. Everything stays in the browser. */
 import type { PDFDocument } from 'pdf-lib'
 import { type PageItem, type Rot, LETTER, normRot, uid } from './lib'
-import { friendlyPdfError, loadPdfLib, openPdfjsDoc, putSourceBytes } from './pdfjs'
+import { friendlyPdfError, ingestGeneration, loadPdfLib, openPdfjsDoc, putSourceBytes } from './pdfjs'
 import { type FormField, type SourceMeta, usePdfStudio } from './store'
 
 export const ACCEPT = 'application/pdf,.pdf,image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp'
 
-type Kind = 'pdf' | 'image' | null
+/** Largest file PDF Studio takes (security review 2026-11-19, F5): files are held in memory twice, so a huge or
+ *  malformed one can freeze the tab. A 100 MB packet piece is far beyond any résumé or license scan. */
+export const MAX_FILE_MB = 100
+export const tooBig = (f: File): boolean => f.size > MAX_FILE_MB * 1024 * 1024
+const mb = (f: File): string => `${Math.round(f.size / (1024 * 1024))} MB`
+
+type Kind = 'pdf' | 'image' | 'heic' | null
 function kindOf(f: File): Kind {
   if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) return 'pdf'
   if (/^image\/(png|jpeg|webp)$/.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name)) return 'image'
+  if (/^image\/hei[cf](-sequence)?$/.test(f.type) || /\.hei[cf]$/i.test(f.name)) return 'heic'
   return null
 }
 
-export async function ingestFiles(files: File[]): Promise<void> {
+/** Batches run one after another (two quick drops never interleave their pages). */
+let chain: Promise<void> = Promise.resolve()
+
+export function ingestFiles(files: File[]): Promise<void> {
+  const store = usePdfStudio.getState()
+  store.setLoading(1) // show progress straight away, even while an earlier batch is still reading
+  const gen = ingestGeneration() // a reset (Start over / user change) after this point drops the batch
+  const run = chain.then(() => ingestNow(files, gen)).finally(() => {
+    // after a reset the store's counter already went back to 0: don't eat a newer batch's count
+    if (gen === ingestGeneration()) usePdfStudio.getState().setLoading(-1)
+  })
+  chain = run.catch(() => undefined)
+  return run
+}
+
+async function ingestNow(files: File[], gen: number): Promise<void> {
   const store = usePdfStudio.getState()
   for (const file of files) {
+    if (gen !== ingestGeneration()) return
     const kind = kindOf(file)
+    if (kind === 'heic') {
+      store.notify('error', `"${file.name}": iPhone HEIC photos aren't supported yet: export or share it as JPG and add it again.`)
+      continue
+    }
     if (!kind) {
       store.notify('error', `"${file.name}" is not a PDF or a PNG / JPG / WebP image, so it was skipped.`)
       continue
     }
+    if (tooBig(file)) {
+      store.notify('error', `"${file.name}" is ${mb(file)}, over the ${MAX_FILE_MB} MB limit, so it was skipped. Split it into smaller files first.`)
+      continue
+    }
     store.setLoading(1)
     try {
-      if (kind === 'pdf') await ingestPdf(file)
-      else await ingestImage(file)
+      if (kind === 'pdf') await ingestPdf(file, gen)
+      else await ingestImage(file, gen)
     } catch (err) {
+      if (gen !== ingestGeneration()) return
       store.notify('error', `Could not open "${file.name}". ${kind === 'pdf' ? friendlyPdfError(err) : 'The image could not be decoded.'}`)
     } finally {
-      store.setLoading(-1)
+      if (gen === ingestGeneration()) store.setLoading(-1)
     }
   }
 }
@@ -56,7 +88,7 @@ function readFields(doc: PDFDocument, pdfLib: typeof import('pdf-lib')): FormFie
   return out
 }
 
-async function ingestPdf(file: File): Promise<void> {
+async function ingestPdf(file: File, gen: number): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   const id = uid('src')
   const pdfLib = await loadPdfLib()
@@ -91,6 +123,7 @@ async function ingestPdf(file: File): Promise<void> {
     }
   }
   if (!sizes.length) throw new Error('No pages')
+  if (gen !== ingestGeneration()) return // cleared while reading: drop it
 
   const meta: SourceMeta = {
     id,
@@ -129,7 +162,7 @@ function decode(url: string): Promise<HTMLImageElement> {
   })
 }
 
-async function ingestImage(file: File): Promise<void> {
+async function ingestImage(file: File, gen: number): Promise<void> {
   const raw = new Uint8Array(await file.arrayBuffer())
   const url = URL.createObjectURL(new Blob([raw.slice()], { type: file.type || 'image/png' }))
   try {
@@ -155,6 +188,7 @@ async function ingestImage(file: File): Promise<void> {
       }
     }
     const s = Math.min(LETTER.w / img.naturalWidth, LETTER.h / img.naturalHeight)
+    if (gen !== ingestGeneration()) return // cleared while reading: drop it
     const id = uid('src')
     putSourceBytes(id, bytes, mime)
     const meta: SourceMeta = {

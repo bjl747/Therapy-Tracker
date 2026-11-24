@@ -1,6 +1,8 @@
-/** Overlay stack: Esc closes only the topmost layer. */
+/** Overlay stack: Esc goes to the topmost layer only. */
 interface Layer {
   close: () => void
+  /** Optional first say on Esc (leave text editing, drop a selection). Return true when it handled the key. */
+  escape?: () => boolean
 }
 const stack: Layer[] = []
 let installed = false
@@ -9,15 +11,17 @@ function onKey(e: KeyboardEvent): void {
   if (e.key !== 'Escape' || !stack.length) return
   e.preventDefault()
   e.stopPropagation()
-  stack[stack.length - 1].close()
+  const top = stack[stack.length - 1]
+  if (top.escape?.()) return
+  top.close()
 }
 
-export function pushLayer(close: () => void): () => void {
+export function pushLayer(close: () => void, escape?: () => boolean): () => void {
   if (!installed) {
     window.addEventListener('keydown', onKey, true)
     installed = true
   }
-  const layer: Layer = { close }
+  const layer: Layer = { close, escape }
   stack.push(layer)
   return () => {
     const i = stack.indexOf(layer)

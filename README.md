@@ -3,7 +3,7 @@
 The **Studio** tab for the GQR Allied Recruiter Hub — job posts, animated GIFs and PDF tools,
 on brand, in seconds. Built to drop into the hub (same stack and look).
 
-- **Job Kit** — type a job once (or pick a Hot Job, or paste many from a spreadsheet) → square,
+- **Job Kit** — type a job once (or pick a Hot Job), or up to five jobs at once → square,
   portrait, story and LinkedIn sizes, an animated GIF and a ready caption, with a photo of the
   job's city chosen automatically. One click to post on LinkedIn.
 - **Editor** — Canva-style drag-and-drop editing, templates with locked brand pieces, live job

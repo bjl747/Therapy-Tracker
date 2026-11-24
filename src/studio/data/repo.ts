@@ -31,12 +31,17 @@ export interface BrandAsset {
   createdAt: number
   /** set on a person's own uploads (hub_studio/uploads); brand files have none */
   ownerUid?: string
+  /** uploader's name, shown to managers / admins in the team list (uploads since 2026-11-19) */
+  ownerName?: string
 }
 
 export interface StudioRepo {
   listDesigns(): Promise<DesignSummary[]>
   getDesign(id: string): Promise<Design | null>
   saveDesign(d: Design, thumb?: string): Promise<void>
+  /** store a thumbnail for a design that has none, without touching the design or its "updated" time.
+   *  Returns the stored link (a data: URL in the browser store). */
+  saveThumb(id: string, thumb: string): Promise<string>
   deleteDesign(id: string): Promise<void>
   /** templates saved by managers (built-ins live in code) */
   listTemplates(): Promise<TemplateDef[]>
@@ -46,9 +51,9 @@ export interface StudioRepo {
   listAssets(): Promise<BrandAsset[]>
   uploadAsset(file: File, kind: BrandAsset['kind']): Promise<BrandAsset>
   deleteAsset(id: string): Promise<void>
-  /** a person's own photos added in the editor ("Your uploads"; images only, BJ's upload exception 2026-11-18).
-   *  In the browser store these are kept with the brand files (one list), so listUploads returns none. */
-  listUploads(): Promise<BrandAsset[]>
+  /** a person's own photos ("Uploads"; images only, BJ's upload exception 2026-11-18). `team`: everyone's, for managers
+   *  and admins (BJ, 2026-11-19). Studio View may upload too (BJ, 2026-11-19: used in the Job Kit). */
+  listUploads(opts?: { team?: boolean }): Promise<BrandAsset[]>
   uploadImage(file: File): Promise<BrandAsset>
   deleteUpload(id: string): Promise<void>
 }
@@ -125,6 +130,11 @@ export const localRepo: StudioRepo = {
       ownerUid: d.ownerUid,
     } satisfies DesignSummary)
   },
+  async saveThumb(id, thumb) {
+    const prev = await get<DesignSummary>('summaries', id)
+    if (prev) await put('summaries', id, { ...prev, thumb })
+    return thumb
+  },
   async deleteDesign(id) {
     await del('designs', id)
     await del('summaries', id)
@@ -133,7 +143,7 @@ export const localRepo: StudioRepo = {
   saveTemplate: (t) => put('templates', t.id, t).then(() => undefined),
   deleteTemplate: (id) => del('templates', id).then(() => undefined),
   async listAssets() {
-    return (await all<BrandAsset>('assets')).sort((a, b) => b.createdAt - a.createdAt)
+    return (await all<BrandAsset>('assets')).filter((a) => !a.ownerUid).sort((a, b) => b.createdAt - a.createdAt)
   },
   async uploadAsset(file, kind) {
     const { url, w, h } = await fileToDataUrl(file)
@@ -150,9 +160,14 @@ export const localRepo: StudioRepo = {
     return a
   },
   deleteAsset: (id) => del('assets', id).then(() => undefined),
-  listUploads: async () => [],
-  uploadImage(file) {
-    return localRepo.uploadAsset(file, 'photo')
+  // the browser store keeps uploads in the brand-file store, marked with an owner (demo: one person, so team = mine)
+  async listUploads() {
+    return (await all<BrandAsset>('assets')).filter((a) => a.ownerUid).sort((a, b) => b.createdAt - a.createdAt)
+  },
+  async uploadImage(file) {
+    const a = { ...(await localRepo.uploadAsset(file, 'photo')), ownerUid: 'local', ownerName: 'You' }
+    await put('assets', a.id, a)
+    return a
   },
   deleteUpload: (id) => del('assets', id).then(() => undefined),
 }

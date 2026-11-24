@@ -6,14 +6,12 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ClipboardList, Image as ImageIcon, Layers, Palette, Shapes, SlidersHorizontal, Sparkles, Type, X } from 'lucide-react'
-import type { Design } from '../engine/model'
-import { drawPage } from '../engine/render'
+import { ClipboardList, CloudUpload, Image as ImageIcon, Layers, Palette, Shapes, SlidersHorizontal, Sparkles, Type, X } from 'lucide-react'
 import { repo } from '../data'
-import { resolveImage } from '../services'
 import { currentPage, useEditor } from './store'
 import { stageApi, useUi, type LeftTab } from './uiStore'
 import { addText, copySelection, cutSelection, enterElement, pasteClip, uploadAndAdd } from './actions'
+import { designThumb, drawThumb } from '../export/thumb'
 import { CLIP_MARKER } from './clipboard'
 import { useWidth } from './hooks'
 import { anyLayerOpen, IconBtn, Portal, Skeleton } from './ui'
@@ -24,6 +22,7 @@ import { PreviewModal, TopBar, ZoomControl, type SaveStatus } from './TopBar'
 import { CommandPalette, ContextMenu } from './Menus'
 import { FieldsPanel } from './panels/FieldsPanel'
 import { BrandPanel, ElementsPanel, PhotosPanel, TextPanel } from './panels/AddPanels'
+import { UploadsPanel } from './panels/UploadsPanel'
 import { LayersPanel } from './panels/LayersPanel'
 import { AnimatePanel } from './panels/AnimatePanel'
 
@@ -34,13 +33,16 @@ export interface EditorProps {
   canEditLocked?: boolean
   /** access level "view" */
   readOnly?: boolean
+  /** read-only, but the Fields (job details) can still be changed: a Job Kit post opened with View (never saved) */
+  editFields?: boolean
 }
 
 const TABS: { id: LeftTab; label: string; icon: ReactNode; title: string }[] = [
   { id: 'fields', label: 'Fields', icon: <ClipboardList size={18} />, title: 'Job details' },
   { id: 'text', label: 'Text', icon: <Type size={18} />, title: 'Add text' },
   { id: 'photos', label: 'Photos', icon: <ImageIcon size={18} />, title: 'City photos' },
-  { id: 'brand', label: 'Brand', icon: <Palette size={18} />, title: 'Brand & uploads' },
+  { id: 'uploads', label: 'Uploads', icon: <CloudUpload size={18} />, title: 'Uploads' },
+  { id: 'brand', label: 'Brand', icon: <Palette size={18} />, title: 'Brand logos' },
   { id: 'elements', label: 'Elements', icon: <Shapes size={18} />, title: 'Shapes & badges' },
   { id: 'layers', label: 'Layers', icon: <Layers size={18} />, title: 'Layers' },
   { id: 'animate', label: 'Animate', icon: <Sparkles size={18} />, title: 'Animation' },
@@ -50,31 +52,18 @@ const PANELS: Record<LeftTab, () => JSX.Element | null> = {
   fields: FieldsPanel,
   text: TextPanel,
   photos: PhotosPanel,
+  uploads: UploadsPanel,
   brand: BrandPanel,
   elements: ElementsPanel,
   layers: LayersPanel,
   animate: AnimatePanel,
 }
 
-/** small PNG of the first page for the design grid */
-export function makeThumb(d: Design, max = 320): string | undefined {
-  try {
-    const k = max / Math.max(d.w, d.h)
-    const c = document.createElement('canvas')
-    c.width = Math.max(1, Math.round(d.w * k))
-    c.height = Math.max(1, Math.round(d.h * k))
-    drawPage(c.getContext('2d')!, d, d.pages[0], { scale: k, resolveImage })
-    return c.toDataURL('image/png')
-  } catch {
-    return undefined // tainted canvas (cross-origin image without CORS) — keep the previous thumbnail
-  }
-}
-
 let mountSeq = 0
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)
 
-export function Editor({ designId, onExit, canEditLocked = false, readOnly = false }: EditorProps) {
+export function Editor({ designId, onExit, canEditLocked = false, readOnly = false, editFields = false }: EditorProps) {
   const loaded = useEditor((s) => s.design?.id === designId)
   const [missing, setMissing] = useState(false)
   const [status, setStatus] = useState<SaveStatus>(readOnly ? 'readonly' : 'saved')
@@ -94,7 +83,8 @@ export function Editor({ designId, onExit, canEditLocked = false, readOnly = fal
       if (!d || !st.dirty || st.readOnly) return
       setStatus('saving')
       try {
-        await repo.saveDesign(d, makeThumb(d))
+        // the thumbnail waits for fonts and pictures, except when the tab is being hidden or closed (save straight away)
+        await repo.saveDesign(d, document.visibilityState === 'hidden' ? drawThumb(d) : await designThumb(d))
         const now = useEditor.getState()
         if (now.design === d) now.markSaved()
         setStatus(useEditor.getState().dirty ? 'dirty' : 'saved')
@@ -115,7 +105,7 @@ export function Editor({ designId, onExit, canEditLocked = false, readOnly = fal
       .then((d) => {
         if (!alive) return
         if (!d) return setMissing(true)
-        useEditor.getState().load(d, { canEditLocked, readOnly })
+        useEditor.getState().load(d, { canEditLocked, readOnly, editFields })
         const ui = useUi.getState()
         ui.setCrop(null)
         ui.setMenu(null)
@@ -129,8 +119,8 @@ export function Editor({ designId, onExit, canEditLocked = false, readOnly = fal
 
   // access level can change while open
   useEffect(() => {
-    if (loaded) useEditor.setState({ canEditLocked, readOnly })
-  }, [loaded, canEditLocked, readOnly])
+    if (loaded) useEditor.setState({ canEditLocked, readOnly, editFields: !readOnly || editFields })
+  }, [loaded, canEditLocked, readOnly, editFields])
 
   // open the Fields panel for field-driven designs on roomy screens (once per design)
   const opened = useRef<string | null>(null)

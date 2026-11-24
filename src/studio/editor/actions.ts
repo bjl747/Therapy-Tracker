@@ -1,6 +1,6 @@
 // Editor commands shared by the keyboard, menus, panels and the palette.
 
-import { effect, image, shape, text, uid, type Anim, type Design, type EffectSpec, type El, type ImageEl, type ShapeEl, type ShapeKind, type TextEl, type TextStyle } from '../engine/model'
+import { effect, image, shape, text, uid, type Anim, type Design, type EffectSpec, type El, type FrameShape, type ImageEl, type ShapeEl, type ShapeKind, type TextEl, type TextStyle } from '../engine/model'
 import { markerKeys } from '../engine/fields'
 import { aabb, type Pt } from '../engine/geometry'
 import { ensureFont } from '../engine/fonts'
@@ -156,6 +156,72 @@ export function uploadError(e: unknown): string {
   return 'That image could not be read'
 }
 
+// ── photo frames (BJ, 2026-11-19: snap a photo into a frame, like Canva) ──
+
+/** a picture that can go into a frame */
+export interface FramePhoto {
+  src: string
+  credit?: ImageEl['credit']
+  name?: string
+}
+
+/** is this element a frame a photo can be dropped into? Photos (Fill) and empty frames; not logos (Fit) or stickers */
+export const isPhotoFrame = (el: El | undefined): el is ImageEl => !!el && el.type === 'image' && (el.fit === 'cover' || !el.src)
+
+/** put a new photo into a frame: same spot, size and shape; the photo is centred, Crop moves it. One undo step.
+ *  The city photo stops following the job's city (BJ: fine), and a template frame stays locked for recruiters. */
+export function replacePhoto(id: string, p: FramePhoto): void {
+  const s = ed()
+  const el = currentPage(s)?.elements.find((e) => e.id === id)
+  if (!el || el.type !== 'image' || s.readOnly) return
+  s.setPhoto(id, {
+    src: p.src,
+    bind: undefined,
+    credit: p.credit ? { ...p.credit } : undefined,
+    focus: { x: 0.5, y: 0.5 },
+    zoom: 1,
+    cropFor: undefined,
+    fit: 'cover',
+    ...(el.bind || el.locked ? { locked: true } : {}),
+  })
+  useEditor.setState({ selection: [id] })
+}
+
+/** a click on a photo in a panel: fills the selected empty frame, otherwise adds the photo to the page */
+export function addOrFill(src: string, natural: { w: number; h: number }, o: Partial<ImageEl> = {}): void {
+  const s = ed()
+  const sel = selectedEls(s)
+  const target = sel.length === 1 && sel[0].type === 'image' && !sel[0].src && !sel[0].bind ? sel[0] : null
+  if (target) replacePhoto(target.id, { src, credit: o.credit, name: o.name })
+  else addImage(src, natural, o)
+}
+
+/** add an empty photo frame of a shape to the middle of the page */
+export function addFrame(shape: FrameShape, label: string): void {
+  const s = ed()
+  const d = s.design
+  if (!d || s.readOnly) return
+  const unit = Math.round(Math.min(d.w, d.h) * 0.42)
+  const w = shape === 'pill' ? Math.round(unit * 0.62) : shape === 'arch' ? Math.round(unit * 0.8) : unit
+  const h = unit
+  s.addEl(image({ ...place(w, h), w, h, src: '', frame: shape, fit: 'cover', focus: { x: 0.5, y: 0.5 }, name: `${label} frame` }))
+}
+
+/** a file dropped from the computer onto a frame: upload it to the person's uploads, then put it in the frame */
+export async function uploadIntoFrame(file: File, id: string): Promise<void> {
+  if (ed().readOnly) return
+  if (!file.type.startsWith('image/')) {
+    toast('Only image files can be added')
+    return
+  }
+  try {
+    const a = await repo.uploadImage(file)
+    replacePhoto(id, { src: a.url, name: a.name.replace(/\.[a-z0-9]+$/i, '') })
+  } catch (e) {
+    toast(uploadError(e))
+  }
+}
+
 export async function uploadAndAdd(file: File, at?: Pt): Promise<void> {
   if (ed().readOnly) return
   if (!file.type.startsWith('image/')) {
@@ -219,13 +285,20 @@ export function enterElement(id: string): void {
   const s = ed()
   const el = currentPage(s)?.elements.find((e) => e.id === id)
   if (!el || s.readOnly) return
+  // a photo (template photo frames too): Crop. A frame with nothing in it yet has nothing to crop.
+  if (el.type === 'image') {
+    useEditor.setState({ selection: [id] })
+    s.setEditingText(null)
+    if (el.src || el.bind) ui().setCrop(id)
+    else toast('Drop a photo into this frame first')
+    return
+  }
   if (el.locked && !s.canEditLocked) {
     if (el.type === 'text') {
       const keys = markerKeys(el.text)
       if (keys.length) ui().focusFieldKey(keys[0])
       else toast('This element is locked by your brand template')
-    } else if (el.type === 'image' && el.bind) ui().focusFieldKey(el.bind)
-    else toast('This element is locked by your brand template')
+    } else toast('This element is locked by your brand template')
     return
   }
   useEditor.setState({ selection: [id] })
@@ -236,9 +309,6 @@ export function enterElement(id: string): void {
       ui().setCrop(null)
       s.setEditingText(id)
     }
-  } else if (el.type === 'image') {
-    s.setEditingText(null)
-    ui().setCrop(id)
   }
 }
 

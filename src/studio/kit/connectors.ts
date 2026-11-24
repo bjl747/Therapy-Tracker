@@ -21,6 +21,8 @@ export interface HotJob {
   weeks?: number
   start?: string
   facility?: string
+  /** when the job was posted (ISO): the From Hot Jobs list is newest first, like the Hot Jobs tab */
+  posted?: string
   // What the post itself says, for the Job Kit's Work out pay strip to show and double-check (BJ, 2026-11-18). Each is
   // set only when it is on the post: nothing here is a default or a guess.
   billRate?: number

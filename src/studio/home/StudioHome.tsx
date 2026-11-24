@@ -13,6 +13,7 @@ import { BUILT_IN_TEMPLATES, type TemplateDef } from '../templates'
 import { instantiate } from '../templates/instantiate'
 import { localLeftovers, moveLocalToHub, repo, type BrandAsset, type DesignSummary } from '../data'
 import { DesignCanvas } from '../ui/DesignCanvas'
+import { designThumb } from '../export/thumb'
 import { useToast } from '../ui/toast'
 import { TemplatesAdmin } from '../admin/TemplatesAdmin'
 import { useTemplates } from '../templates/store'
@@ -63,18 +64,19 @@ function CreateTab() {
   const nav = useNavigate()
   // View access makes and downloads job posts; starting a design saves it, which needs Edit
   const canEdit = useAuth().can('studio') === 'edit'
+  const hasPdf = useAuth().can('studio_pdf') !== 'none' // PDF Studio is its own access switch (BJ, 2026-11-19)
   const { templates } = useTemplates()
   const t = templates[0] ?? BUILT_IN_TEMPLATES[0]
   const sample = useMemo(() => instantiate(t, 'square'), [t])
   const newBlank = async (k: SizeKey) => {
     const s = SIZES[k]
     const d = design({ w: s.w, h: s.h, name: `Untitled ${s.label.toLowerCase()}` })
-    await repo.saveDesign(d)
+    await repo.saveDesign(d, await designThumb(d))
     nav(`/studio/design/${d.id}`)
   }
   const fromTemplate = async (tpl: TemplateDef, size: string) => {
     const d = instantiate(tpl, size)
-    await repo.saveDesign(d)
+    await repo.saveDesign(d, await designThumb(d))
     nav(`/studio/design/${d.id}`)
   }
   return (
@@ -98,22 +100,22 @@ function CreateTab() {
           <div className="min-w-0">
             <div className="eyebrow">Batch</div>
             <div className="text-[17px] font-extrabold">Many jobs at once</div>
-            <div className="text-[12.5px] text-ink-3 mt-0.5">Paste rows from Excel or Sheets → a full kit for every job in one ZIP.</div>
+            <div className="text-[12.5px] text-ink-3 mt-0.5">Up to five jobs, typed or from Hot Jobs → a Hot Jobs This Week post and a kit for each.</div>
           </div>
         </button>
-        <button onClick={() => nav('/studio/pdf')} className="card p-4 text-left flex gap-4 items-center min-w-0 hover:shadow-lg transition" style={{ borderLeft: '3px solid rgb(var(--series-2))' }}>
+        {hasPdf && <button onClick={() => nav('/studio/pdf')} className="card p-4 text-left flex gap-4 items-center min-w-0 hover:shadow-lg transition" style={{ borderLeft: '3px solid rgb(var(--series-2))' }}>
           <FileStack size={34} className="shrink-0 text-[rgb(var(--series-2))]" />
           <div className="min-w-0">
             <div className="eyebrow">PDF tools</div>
             <div className="text-[17px] font-extrabold">Combine & edit PDFs</div>
             <div className="text-[12.5px] text-ink-3 mt-0.5">Merge files, reorder pages, sign, redact, fill forms.</div>
           </div>
-        </button>
+        </button>}
       </div>
 
       {!canEdit && (
         <div className="card p-4 text-[12.5px] text-ink-2">
-          <b>You have View access.</b> Make job posts and download them, and use the PDF tools. Saving and editing designs
+          <b>You have View access.</b> Make job posts and download them{hasPdf ? ', and use the PDF tools' : ''}. Saving and editing designs
           needs Studio <b>Edit</b>: ask an admin.
         </div>
       )}
@@ -180,6 +182,9 @@ function CreateTab() {
 
 // ── My designs ──────────────────────────────────────────────
 
+/** previews drawn for designs saved without one (this visit), so coming back to the tab doesn't draw them again */
+const drawnThumbs = new Map<string, string>()
+
 function DesignsTab() {
   const nav = useNavigate()
   const toast = useToast()
@@ -208,6 +213,34 @@ function DesignsTab() {
   const mine = (d: DesignSummary) => !d.ownerUid || d.ownerUid === user?.uid
   // owners and managers / admins can delete (the rules say the same); AMs can open everyone's but not delete them
   const canDelete = (d: DesignSummary) => canEdit && (mine(d) || isManager || user?.role === 'admin')
+  // Designs saved without a thumbnail (Job Kit sizes, templates and Start blank before 2026-11-19, or a design opened
+  // and never changed) are drawn here one at a time, and the preview is stored when this person may save that design
+  // (owner, manager, admin; same as delete). Otherwise (AMs, View access) it is only shown on this screen.
+  const [drawn, setDrawn] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (!list) return
+    let stop = false
+    const missing = list.filter((d) => !d.thumb && !d.id.startsWith('tpl_'))
+    void (async () => {
+      for (const d of missing) {
+        if (stop) return
+        let url = drawnThumbs.get(d.id)
+        if (!url) {
+          const full = await repo.getDesign(d.id).catch(() => null)
+          if (!full || stop) continue
+          const t = await designThumb(full)
+          if (!t) continue
+          url = canDelete(d) ? await repo.saveThumb(d.id, t).catch(() => t) : t
+          drawnThumbs.set(d.id, url)
+        }
+        if (!stop) setDrawn((m) => ({ ...m, [d.id]: url }))
+      }
+    })()
+    return () => {
+      stop = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list])
   // template drafts being edited by an admin aren't personal designs
   const shown = (list ?? []).filter((d) => !d.id.startsWith('tpl_') && d.name.toLowerCase().includes(q.trim().toLowerCase()))
 
@@ -273,8 +306,8 @@ function DesignsTab() {
           {shown.map((d) => (
             <div key={d.id} className="card p-2.5 min-w-0 group">
               <button className="block w-full rounded-lg overflow-hidden bg-surface-2 aspect-square flex items-center justify-center" onClick={() => nav(`/studio/design/${d.id}`)}>
-                {d.thumb ? (
-                  <img src={d.thumb} alt="" className="max-w-full max-h-full object-contain" />
+                {d.thumb || drawn[d.id] ? (
+                  <img src={d.thumb || drawn[d.id]} alt="" className="max-w-full max-h-full object-contain" />
                 ) : (
                   <ImagePlus className="text-ink-3" />
                 )}

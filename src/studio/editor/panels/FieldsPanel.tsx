@@ -6,6 +6,7 @@ import { ImageOff, Lock, MapPin, RefreshCw } from 'lucide-react'
 import type { FieldDef } from '../../engine/model'
 import { fieldValue, markerKeys } from '../../engine/fields'
 import { cityIndex, nearbyCities, resolveLocation, thumbUrl, type CityPhoto } from '../../photos/cities'
+import { isPhotoLink } from '../../services'
 import { useEditor } from '../store'
 import { useUi } from '../uiStore'
 import { useCityData } from '../hooks'
@@ -15,7 +16,8 @@ const titleCase = (k: string) => k.replace(/_/g, ' ').replace(/^\w/, (c) => c.to
 
 export function FieldsPanel() {
   const design = useEditor((s) => s.design)!
-  const readOnly = useEditor((s) => s.readOnly)
+  // read-only designs normally lock the form too; a Job Kit post opened with View keeps it open (store.editFields)
+  const readOnly = useEditor((s) => !s.editFields)
   const canEditLocked = useEditor((s) => s.canEditLocked)
   const focus = useUi((s) => s.focusField)
   const inputs = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>())
@@ -133,6 +135,24 @@ function LocationPhoto({ field, value, pinned, disabled }: { field: string; valu
     )
 
   const match = value.trim() ? resolveLocation(value) : null
+  // one of the person's uploads chosen in the Job Kit
+  if (isPhotoLink(pinned))
+    return (
+      <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface-2/60 p-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <img src={pinned} alt="" className="h-11 w-16 shrink-0 rounded-md object-cover" loading="lazy" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12.5px] font-semibold text-ink">Your photo</div>
+            <div className="truncate text-[11px] text-ink-3">From your uploads</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" className="chip" disabled={disabled} onClick={() => pin('')}>
+            Use the city photo
+          </button>
+        </div>
+      </div>
+    )
   const pinnedPhoto: CityPhoto | undefined = pinned ? cityIndex().find((c) => c.id === pinned) : undefined
   const photo = pinnedPhoto ?? match?.photo
   const options = open ? nearbyCities(value, 8) : []

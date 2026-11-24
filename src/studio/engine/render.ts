@@ -4,6 +4,7 @@
 // downloaded file always match.
 // ─────────────────────────────────────────────────────────────
 
+import { frameCmds, traceFrame } from './frames'
 import { isDrawn, type Anim, type Design, type El, type Gradient, type ImageEl, type Page, type ShapeEl, type TextEl } from './model'
 import { resolveText } from './fields'
 import { fontString, inlineUnderline, layoutText, type TextLayout } from './text'
@@ -326,14 +327,21 @@ export function coverRect(
   return { sx, sy, sw, sh }
 }
 
+/** the focal point a photo is drawn around: its own (Crop) unless it follows a field and shows another picture */
+export function imageFocus(el: ImageEl, bound: BoundImage | null, src: string): { x: number; y: number } {
+  if (!bound) return el.focus
+  return el.cropFor && el.cropFor === src ? el.focus : (bound.focus ?? el.focus)
+}
+
 function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, kenT: number | null) {
   const bound = el.bind && opts.resolveImage ? opts.resolveImage(el, design.fields) : null
   const src = bound?.src || el.src
-  const focus = bound?.focus ?? el.focus
+  const focus = imageFocus(el, bound, src)
   const raw = src ? getImage(src) : null
   const { w, h } = el
   ctx.save()
-  roundRect(ctx, 0, 0, w, h, el.radius)
+  if (el.frame && el.frame !== 'rect') traceFrame(ctx, frameCmds(el.frame, w, h, el.radius))
+  else roundRect(ctx, 0, 0, w, h, el.radius)
   ctx.clip()
   // best-quality scaling: logos are drawn at about a third of their file size, where the default goes soft
   ctx.imageSmoothingEnabled = true
@@ -349,6 +357,27 @@ function drawImage(ctx: Ctx, el: ImageEl, design: Design, opts: RenderOptions, k
       ctx.fillStyle = g
     } else ctx.fillStyle = '#CBD2E6'
     ctx.fillRect(0, 0, w, h)
+    // an empty frame in the editor: a small picture sign in the middle says "drop a photo here"
+    if (!src && opts.showMissing) {
+      const u = Math.min(w, h) * 0.16
+      ctx.translate(w / 2, h / 2)
+      ctx.strokeStyle = 'rgba(12,24,77,.38)'
+      ctx.fillStyle = 'rgba(12,24,77,.38)'
+      ctx.lineWidth = Math.max(1, u * 0.09)
+      roundRect(ctx, -u, -u * 0.75, u * 2, u * 1.5, u * 0.18)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(-u * 0.75, u * 0.5)
+      ctx.lineTo(-u * 0.2, -u * 0.1)
+      ctx.lineTo(u * 0.2, u * 0.25)
+      ctx.lineTo(u * 0.45, 0)
+      ctx.lineTo(u * 0.75, u * 0.5)
+      ctx.closePath()
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(u * 0.45, -u * 0.35, u * 0.15, 0, Math.PI * 2)
+      ctx.fill()
+    }
     ctx.restore()
     return
   }

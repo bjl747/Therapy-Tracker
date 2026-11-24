@@ -5,7 +5,7 @@ import { create } from 'zustand'
 import type { Pt } from '../engine/geometry'
 import type { ClipData } from './clipboard'
 
-export type LeftTab = 'fields' | 'text' | 'photos' | 'brand' | 'elements' | 'layers' | 'animate'
+export type LeftTab = 'fields' | 'text' | 'photos' | 'uploads' | 'brand' | 'elements' | 'layers' | 'animate'
 
 interface UiState {
   leftTab: LeftTab | null
@@ -15,6 +15,9 @@ interface UiState {
   focusField: { key: string; n: number } | null
   /** image being re-framed ("adjust photo" mode) */
   cropId: string | null
+  /** a photo being dragged over a frame (snap into frame): the frame is outlined and, when `src` is known, shows
+   *  the new photo until the drop */
+  drop: { id: string; src: string | null } | null
   /** page origin inside the stage when zoom is explicit (store.zoom !== null) */
   pan: Pt
   /** the zoom actually on screen (fit resolves to a number) */
@@ -33,6 +36,7 @@ interface UiState {
   setInspectorOpen: (v: boolean) => void
   focusFieldKey: (key: string) => void
   setCrop: (id: string | null) => void
+  setDrop: (d: { id: string; src: string | null } | null) => void
   setPan: (p: Pt) => void
   setViewZoom: (z: number) => void
   setClip: (c: ClipData | null) => void
@@ -50,6 +54,7 @@ export const useUi = create<UiState>((set, get) => ({
   inspectorOpen: false,
   focusField: null,
   cropId: null,
+  drop: null,
   pan: { x: 0, y: 0 },
   viewZoom: 1,
   clip: null,
@@ -64,6 +69,10 @@ export const useUi = create<UiState>((set, get) => ({
   setInspectorOpen: (v) => set({ inspectorOpen: v }),
   focusFieldKey: (key) => set({ leftTab: 'fields', inspectorOpen: false, focusField: { key, n: (get().focusField?.n ?? 0) + 1 } }),
   setCrop: (id) => set({ cropId: id }),
+  setDrop: (d) => {
+    const cur = get().drop
+    if (cur?.id !== d?.id || cur?.src !== d?.src) set({ drop: d })
+  },
   setPan: (p) => set({ pan: p }),
   setViewZoom: (z) => {
     if (Math.abs(get().viewZoom - z) > 0.0005) set({ viewZoom: z })
@@ -84,8 +93,14 @@ export const stageApi: {
   zoomTo: (z: number | null) => void
   zoomStep: (dir: 1 | -1) => void
   focus: () => void
+  /** the page point under a window point, or null when it isn't over the stage (dragging from a panel) */
+  pageAt: (clientX: number, clientY: number) => Pt | null
+  /** the photo frame under a window point (snap into frame), or null */
+  frameAt: (clientX: number, clientY: number) => string | null
 } = {
   zoomTo: () => {},
   zoomStep: () => {},
   focus: () => {},
+  pageAt: () => null,
+  frameAt: () => null,
 }

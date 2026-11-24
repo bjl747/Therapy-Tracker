@@ -15,11 +15,11 @@ src/
       fonts.ts            self-hosted OFL fonts (public/fonts), FontFace loading
     editor/               the canvas editor (no Konva — canvas + DOM overlay); see editor/README.md
       store.ts            zustand: selection, gestures, undo/redo, pages, brand locks
-    kit/                  Job Kit: one job → every size + GIF + caption; batch paste; roundup
+    kit/                  Job Kit: one job → every size + GIF + caption; Many jobs (up to 5 forms) → roundup + a kit each
       JobKit.tsx          the screen (form, previews, caption, Post on LinkedIn, recent jobs)
       normalize.ts        "$3,227 – $3,547", "3x12s, Nights", "RN – ICU"… (tested)
       captions.ts         specialty-aware captions + hashtags (no AI)
-      batch.ts            paste-from-spreadsheet parser with fuzzy headers
+      many.ts             Many jobs helpers: blank job, From Hot Jobs fill, multi-pick, newest-first sort
       connectors.ts       Hot Jobs source + Pay Intel hook (sample data until wired)
       HotJobPicker.tsx    "From Hot Jobs" picker;  LocationInput.tsx  town autocomplete
       warnings.ts         per-size "ready to post" checks

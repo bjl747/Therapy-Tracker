@@ -237,12 +237,11 @@ describe('misc', () => {
     expect(sanitizeFileName('a/b:c?.pdf')).toBe('abc')
     expect(sanitizeFileName('   ')).toBe('document')
   })
-  it('estimates grow with pages and shrink with compression', () => {
+  it('estimates grow with pages', () => {
     const pages = [pg('a'), pg('b')]
     const src = { s1: { bytes: 2_000_000, pageCount: 2, kind: 'pdf' as const } }
-    const plain = estimateBytes(pages, src, null)
+    const plain = estimateBytes(pages, src)
     expect(plain).toBeGreaterThan(1_900_000)
-    expect(estimateBytes(pages, src, { quality: 0.3 })).toBeLessThan(plain)
-    expect(estimateBytes([pg('a')], src, null)).toBeLessThan(plain)
+    expect(estimateBytes([pg('a')], src)).toBeLessThan(plain)
   })
 })
