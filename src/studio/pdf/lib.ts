@@ -31,11 +31,19 @@ export interface TextAnn extends AnnBase {
   size: number
   color: string
   bold: boolean
+  /** Turn of the content inside its box, clockwise in base space (see annot.ts). 0 / missing = base orientation. */
+  rot?: Rot
+  /** "Edit text": the original words this item replaces, painted over first (base space). Stays put when the text moves. */
+  cover?: Rect
+  /** Fill of `cover` (hex), sampled from the page; white when missing. */
+  coverColor?: string
 }
 export interface ImageAnn extends AnnBase {
   kind: 'image'
   dataUrl: string
   mime: 'image/png' | 'image/jpeg'
+  /** Turn of the content inside its box, clockwise in base space (see annot.ts). */
+  rot?: Rot
 }
 export interface BoxAnn extends AnnBase {
   kind: 'whiteout' | 'highlight' | 'redact'
@@ -61,6 +69,61 @@ export interface PageItem {
 }
 
 export const LETTER = { w: 612, h: 792 }
+
+/** Output page layout: 'letter' = every page is a portrait Letter sheet with its content fitted and centred
+ *  (Rotate then turns the content on the sheet); 'original' = each page keeps its own size and rotation. */
+export type PageLayout = 'letter' | 'original'
+
+/** Pages whose displayed content (after the user's rotation) is wider than tall. */
+export function widePageIds(pages: PageItem[]): string[] {
+  return pages.filter((p) => {
+    const d = displaySize(p.w, p.h, p.rotation)
+    return d.w > d.h + 0.5
+  }).map((p) => p.id)
+}
+
+/** PDF transformation matrix [a, b, c, d, e, f] (x' = a·x + c·y + e, y' = b·x + d·y + f). */
+export type Matrix = [number, number, number, number, number, number]
+
+/**
+ * Fit content of size dw x dh on a sheet: scale to fit (up or down) and centre.
+ * `ox` / `oy` are the side and top/bottom margins (equal, so they read the same y-up or y-down).
+ */
+export function fitOnSheet(dw: number, dh: number, sheet = LETTER): { s: number; ox: number; oy: number; w: number; h: number } {
+  const s = Math.min(sheet.w / Math.max(dw, 1e-6), sheet.h / Math.max(dh, 1e-6))
+  return { s, ox: (sheet.w - dw * s) / 2, oy: (sheet.h - dh * s) / 2, w: dw * s, h: dh * s }
+}
+
+/**
+ * Letter layout: maps the UNROTATED PDF user space of a page whose crop box is `box` onto the sheet,
+ * turned `total` degrees clockwise (intrinsic /Rotate + user rotation), fitted and centred.
+ * Verified against pdf.js renders for every /Rotate x user rotation with a non-zero crop origin.
+ */
+export function sheetMatrix(box: Rect, total: Rot, sheet = LETTER): Matrix {
+  const d = displaySize(box.w, box.h, total)
+  const { s, ox, oy } = fitOnSheet(d.w, d.h, sheet)
+  const { x: bx, y: by, w: W, h: H } = box
+  switch (total) {
+    case 90:
+      return [0, -s, s, 0, ox - s * by, oy + s * (W + bx)]
+    case 180:
+      return [-s, 0, 0, -s, ox + s * (W + bx), oy + s * (H + by)]
+    case 270:
+      return [0, s, -s, 0, ox + s * (H + by), oy - s * bx]
+    default:
+      return [s, 0, 0, s, ox - s * bx, oy - s * by]
+  }
+}
+
+export function applyMatrix(m: Matrix, p: Pt): Pt {
+  return { x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] }
+}
+
+/** The page already is the sheet (same size, origin 0, not turned): Letter layout leaves it untouched. */
+export function isSheetAlready(box: Rect, total: Rot, sheet = LETTER): boolean {
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.5
+  return total === 0 && near(box.x, 0) && near(box.y, 0) && near(box.w, sheet.w) && near(box.h, sheet.h)
+}
 
 let counter = 0
 export function uid(prefix = 'id'): string {
@@ -417,17 +480,11 @@ export interface SourceInfo {
 export function estimateBytes(
   pages: PageItem[],
   sources: Record<string, SourceInfo | undefined>,
-  compress: { quality: number } | null,
 ): number {
   let total = 1200
   for (const p of pages) {
     const area = p.w * p.h
     const annBytes = p.annotations.reduce((s, a) => s + (a.kind === 'image' ? a.dataUrl.length * 0.75 : 200), 0)
-    if (compress) {
-      const q = clamp(compress.quality, 0.1, 1)
-      total += area * 2.25 * (0.06 + 0.45 * q * q)
-      continue
-    }
     if (hasRedaction(p)) {
       total += area * 4 * 0.12 + 20000
       continue

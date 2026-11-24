@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatTitle, bareNumber, formatDuration, formatMoneyRange, formatShift, shiftHours, shiftLength, tidyField } from './normalize'
 import { article, caption, hashtags } from './captions'
-import { matchHeader, parseJobs, parseTable } from './batch'
-import { JOB_FIELDS } from '../templates/jobPost'
 import { matchLocation, type CityPhoto } from '../photos/cities'
 import { parseLocation, formatLocation } from '../photos/location'
 
@@ -66,23 +64,6 @@ describe('captions', () => {
   })
 })
 
-describe('batch paste', () => {
-  it('maps fuzzy headers', () => {
-    expect(matchHeader('Job Title', JOB_FIELDS)).toBe('job_title')
-    expect(matchHeader('City, State', JOB_FIELDS)).toBe('location')
-    expect(matchHeader('Weekly Gross', JOB_FIELDS)).toBe('weekly_pay')
-    expect(matchHeader('Recruiter', JOB_FIELDS)).toBeNull()
-  })
-  it('parses tab-separated rows with quotes', () => {
-    expect(parseTable('a\tb\n"x, y"\tz')).toEqual([['a', 'b'], ['x, y', 'z']])
-    const r = parseJobs('Title\tCity\tWeekly\nRN\tBoise, ID\t2500\nPT\tAustin, TX\t', JOB_FIELDS)
-    expect(r.jobs).toEqual([
-      { job_title: 'RN', location: 'Boise, ID', weekly_pay: '2500' },
-      { job_title: 'PT', location: 'Austin, TX' },
-    ])
-  })
-})
-
 describe('locations', () => {
   const photo = (id: string, city: string, st: string, lat: number, lon: number, population: number): CityPhoto => ({
     id, city, st, state: st, population, lat, lon, width: 1280, height: 853,
@@ -125,10 +106,6 @@ describe('template-locked fields', () => {
     expect(d.fields.job_type).toBe('ALLIED TRAVEL')
     expect(d.fields.website).toBe('unitimed.com')
     expect(d.fields.job_title).toBe('RN')
-  })
-  it('pasted columns never map onto locked fields', () => {
-    const r = parseJobs('Title\tJob Type\tBenefits\tWebsite\nRN\tNurse\tPTO\tx.com', JOB_FIELDS)
-    expect(r.jobs).toEqual([{ job_title: 'RN' }])
   })
   it('recruiters cannot change locked fields in the editor; managers can', () => {
     const d = instantiate(TRAVEL_JOB_POST, 'square')
@@ -177,22 +154,6 @@ describe('review fixes (2026-11-18)', () => {
     expect(article('Unit Clerk')).toBe('a')
     expect(article('Pharmacist')).toBe('a')
   })
-  it('keeps columns lined up when the first cell is blank', () => {
-    const t = '\tTitle\tCity\n1\tRN\tBoise, ID\n'
-    const r = parseJobs(t, JOB_FIELDS)
-    expect(r.jobs[0]).toMatchObject({ job_title: 'RN', location: 'Boise, ID' })
-  })
-  it('never maps bill rates or margins', () => {
-    expect(matchHeader('Bill Rate High', JOB_FIELDS)).toBeNull()
-    expect(matchHeader('Weekly Bill Rate', JOB_FIELDS)).toBeNull()
-    expect(matchHeader('Margin', JOB_FIELDS)).toBeNull()
-    expect(matchHeader('Hourly High', JOB_FIELDS)).toBe('wage_high')
-  })
-  it('fills each field from the first matching column only', () => {
-    const r = parseJobs('Specialty\tProfession\tCity\nICU\tRN\tBoise, ID', JOB_FIELDS)
-    expect(r.mapping).toEqual(['job_title', null, 'location'])
-    expect(r.jobs[0].job_title).toBe('ICU')
-  })
 })
 
 describe('title abbreviations (2026-11-18)', () => {
@@ -202,5 +163,48 @@ describe('title abbreviations (2026-11-18)', () => {
     expect(formatTitle('OR Tech')).toBe('OR Tech')
     expect(formatTitle('PHARMACIST')).toBe('Pharmacist')
     expect(formatTitle('rn - icu')).toBe('RN – ICU')
+  })
+})
+
+import { MAX_JOBS, blankJob, isBlankJob, newestFirst, openSlots, placeHotJobs, withHotJob } from './many'
+import { PAY_KEYS } from './connectors'
+describe('Many jobs (2026-11-19)', () => {
+  const T = TRAVEL_JOB_POST
+  const hot = (t: string) => ({ job_title: t, location: 'Boise, ID' })
+  it('a blank job keeps only the locked values', () => {
+    const b = blankJob(T)
+    expect(isBlankJob(b, T)).toBe(true)
+    expect(b.job_type).toBe('ALLIED TRAVEL')
+    expect(isBlankJob({ ...b, shift: '3x12' }, T)).toBe(false)
+  })
+  it('a hot job starts the pay, shift and duration clean and marks the job hot', () => {
+    const j = withHotJob({ job_title: 'Old', weekly_pay: '$9', shift: '5x8', duration: '13 weeks', [PAY_KEYS.bill]: '99', location__photo: 'x' }, hot('CT Tech'))
+    expect(j).toMatchObject({ job_title: 'CT Tech', weekly_pay: '', shift: '', duration: '', [PAY_KEYS.bill]: '', [PAY_KEYS.hot]: '1', location__photo: '' })
+  })
+  it('several hot jobs fill blank jobs first, then add jobs, never past five', () => {
+    const jobs = [{ ...blankJob(T), job_title: 'Mine' }, blankJob(T)]
+    expect(openSlots(jobs, T)).toBe(1 + MAX_JOBS - 2)
+    const r = placeHotJobs(jobs, ['A', 'B', 'C', 'D', 'E'].map(hot), T)
+    expect(r.jobs.map((j) => j.job_title)).toEqual(['Mine', 'A', 'B', 'C', 'D'])
+    expect(r.last).toBe(4)
+  })
+  it('lists hot jobs newest first, like the Hot Jobs tab; undated ones last in their order', () => {
+    const js = [
+      { id: 'a', title: '', city: '', state: '', posted: '2026-11-01T10:00:00Z' },
+      { id: 'b', title: '', city: '', state: '' },
+      { id: 'c', title: '', city: '', state: '', posted: '2026-11-18T10:00:00Z' },
+      { id: 'd', title: '', city: '', state: '' },
+    ]
+    expect(newestFirst(js).map((j) => j.id)).toEqual(['c', 'a', 'b', 'd'])
+  })
+})
+
+import { HOT_JOBS_ROUNDUP, roundupFields } from '../templates/roundup'
+describe('roundup post (demo test, 2026-11-19)', () => {
+  it('draws "EST. WEEKLY" only under a pay', () => {
+    const d = instantiate(HOT_JOBS_ROUNDUP, 'square', roundupFields([{ job_title: 'RRT', location: 'Springfield, MO' }, { job_title: 'CVT', location: 'Boise, ID', weekly_pay: '$2,410' }]))
+    const labels = d.pages[0].elements.filter((e) => e.type === 'text' && e.text === 'EST. WEEKLY')
+    const shown = labels.filter((e) => !e.showIf || !!d.fields[e.showIf]?.trim())
+    expect(shown.map((e) => e.showIf)).toEqual(['job2_pay'])
   })
 })

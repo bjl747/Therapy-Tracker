@@ -30,6 +30,18 @@ export function loadPdfLib(): Promise<typeof import('pdf-lib')> {
   return import('pdf-lib')
 }
 
+/**
+ * Ingest generation: bumped whenever everything is cleared (store.reset -> raster.releaseAllSources).
+ * A file that is still being read when that happens is dropped instead of landing in the new document.
+ */
+let ingestGen = 0
+export function ingestGeneration(): number {
+  return ingestGen
+}
+export function bumpIngestGeneration(): void {
+  ingestGen += 1
+}
+
 /** Source bytes are held exactly once, here. The store only keeps metadata. */
 const sourceBytes = new Map<string, Uint8Array>()
 const sourceMime = new Map<string, string>()
@@ -56,6 +68,8 @@ export async function openPdfjsDoc(bytes: Uint8Array): Promise<PDFDocumentProxy>
   const task = pdfjs.getDocument({
     data: bytes.slice(),
     useWasm: false,
+    // real font names (e.g. "Helvetica-Bold") so Edit text can tell bold lines
+    fontExtraProperties: true,
     wasmUrl: `${base}wasm/`,
     standardFontDataUrl: `${base}standard_fonts/`,
     cMapUrl: `${base}cmaps/`,

@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // "Hot Jobs This Week" — several openings in one post. Rows 1–5 each have
 // title / location / pay fields; empty rows disappear (showIf). Built from
-// the Job Kit's "Many jobs" paste with one click.
+// the Job Kit's "Many jobs" (up to five job forms), live as they're typed.
 // ─────────────────────────────────────────────────────────────
 
 import { image, page, shape, text, type Anim, type El, type FieldDef } from '../engine/model'
@@ -39,7 +39,8 @@ function rows(x: number, y0: number, w: number, rowH: number, gap: number, scale
       T({ x: x + 30 * scale, y: y + rowH * 0.14, w: w * 0.6, h: rowH * 0.42, text: `{{job${n}_title}}`, showIf: show, style: { size: 34 * scale, weight: 800 }, anim: a }),
       T({ x: x + 30 * scale, y: y + rowH * 0.56, w: w * 0.6, h: rowH * 0.3, text: `{{job${n}_location}}`, color: BRAND.teal, showIf: show, style: { size: 23 * scale, weight: 700 }, anim: a }),
       T({ x: x + w * 0.62, y: y + rowH * 0.2, w: w * 0.38 - 26 * scale, h: rowH * 0.36, text: `{{job${n}_pay}}`, showIf: show, style: { size: 30 * scale, weight: 800, align: 'right' }, anim: a }),
-      T({ x: x + w * 0.62, y: y + rowH * 0.58, w: w * 0.38 - 26 * scale, h: rowH * 0.26, text: 'EST. WEEKLY', color: BRAND.muted, fit: 'fixed', showIf: show, style: { size: 15 * scale, weight: 700, align: 'right', letterSpacing: 1 }, anim: a }),
+      // the "EST. WEEKLY" label only under a pay (a job without one showed the label alone)
+      T({ x: x + w * 0.62, y: y + rowH * 0.58, w: w * 0.38 - 26 * scale, h: rowH * 0.26, text: 'EST. WEEKLY', color: BRAND.muted, fit: 'fixed', showIf: `job${n}_pay`, style: { size: 15 * scale, weight: 700, align: 'right', letterSpacing: 1 }, anim: a }),
     )
   }
   return out
@@ -107,7 +108,7 @@ export const HOT_JOBS_ROUNDUP: TemplateDef = {
   id: 'hot-jobs-roundup',
   name: 'Hot Jobs Roundup',
   category: 'job-post',
-  description: 'Up to five openings in one post — paste a list of jobs and it builds itself.',
+  description: 'Up to five openings in one post — fill in Job Kit → Many jobs and it builds itself.',
   tags: ['hiring', 'roundup', 'weekly', 'list'],
   fieldDefs: ROUNDUP_FIELDS,
   layouts: { square: square(), story: story() },

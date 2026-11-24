@@ -12,15 +12,17 @@ import clsx from 'clsx'
 import { Copy, Crop, Lock, MoreHorizontal, Pencil, RotateCw, Trash2, Unlock } from 'lucide-react'
 import { cloneEl, isDrawn, uid, type Design, type El, type ImageEl, type TextEl } from '../engine/model'
 import { aabb, hitEl, hitTest, intersects, normRect, resizeEl, rotatePt, snapMove, unionRect, type Guide, type Pt, type Rect } from '../engine/geometry'
-import { clearTextCache, coverRect, drawPage, textLayout } from '../engine/render'
+import { clearTextCache, drawPage, imageFocus, textLayout } from '../engine/render'
+import { frameCmds, frameD } from '../engine/frames'
 import { fontString } from '../engine/text'
 import { getImage, onImageLoaded, sizeOf } from '../engine/images'
 import { ensureFont, onFontsReady } from '../engine/fonts'
 import { loadCityData, onCityDataReady } from '../photos/cities'
 import { resolveImage } from '../services'
-import { currentPage, selectedEls, useEditor } from './store'
+import { currentPage, isTemplateFrame, lockedFor, selectedEls, useEditor } from './store'
 import { stageApi, useUi } from './uiStore'
-import { enterElement, uploadAndAdd } from './actions'
+import { enterElement, isPhotoFrame, uploadAndAdd, uploadIntoFrame } from './actions'
+import { cropOf, fromFrameSpace, movePhoto, photoBox, scalePhoto, toFrameSpace, trimFrame, trimmedOnPage, type Box, type Corner, type Edge } from './cropMath'
 import { IconBtn, Slider } from './ui'
 import {
   angleOf,
@@ -73,7 +75,7 @@ type Gesture =
   | { k: 'rotate'; c: Pt; a0: number; frame0: Frame; els0: El[] }
   | { k: 'marquee'; p0: Pt; base: string[]; key: string }
   | { k: 'pan'; s0: Pt; v0: View }
-  | { k: 'crop'; id: string; p0: Pt; fx: number; fy: number; kx: number; ky: number; rx: number; ry: number; rot: number; flip: boolean }
+  | { k: 'crop'; id: string; how: 'move' | 'scale' | 'trim'; corner?: Corner; edge?: Edge; q0: Pt; P0: Box; iw: number; ih: number; src: string; el0: ImageEl }
   | { k: 'pinch'; d0: number; m0: Pt; v0: View }
 
 function frameOf(els: El[]): Frame | null {
@@ -104,14 +106,37 @@ function scaledProps(el: El, s: number): Partial<El> {
   return el.shape === 'rect' ? ({ radius: r1(el.radius * s) } as Partial<El>) : {}
 }
 
-/** what the image element is actually showing (bound photo or its own src) */
-function imageInfo(el: ImageEl, design: Design): { iw: number; ih: number } | null {
+/** what the image element is actually showing (bound photo or its own src), its size and focal point */
+function imageInfo(el: ImageEl, design: Design): { iw: number; ih: number; src: string; focus: Pt } | null {
   const b = el.bind ? resolveImage(el, design.fields) : null
-  const img = getImage(b?.src || el.src)
+  const src = b?.src || el.src
+  const img = src ? getImage(src) : null
   if (!img) return null
   const { w, h } = sizeOf(img)
-  return w && h ? { iw: w, ih: h } : null
+  return w && h ? { iw: w, ih: h, src, focus: imageFocus(el, b, src) } : null
 }
+
+/** the photo frame under a page point (snap into frame): the topmost photo or empty frame, even under text */
+function frameUnder(p: Pt | null): string | null {
+  if (!p) return null
+  const st = useEditor.getState()
+  const pg = currentPage(st)
+  if (!pg || st.readOnly) return null
+  for (let i = pg.elements.length - 1; i >= 0; i--) {
+    const e = pg.elements[i]
+    if (isPhotoFrame(e) && isDrawn(e, st.design?.fields) && hitEl(e, p)) return e.id
+  }
+  return null
+}
+
+/** crop handles: the photo's four corners (resize the photo) and the frame's edges and corners (trim the frame) */
+const CORNERS: Corner[] = ['nw', 'ne', 'sw', 'se']
+const EDGES: Edge[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+const cornerOf = (P: Box, c: Corner): Pt => ({ x: c.includes('w') ? P.x : P.x + P.w, y: c.includes('n') ? P.y : P.y + P.h })
+const edgeOf = (w: number, h: number, e: Edge): Pt => ({
+  x: e.includes('w') ? 0 : e.includes('e') ? w : w / 2,
+  y: e.includes('n') ? 0 : e.includes('s') ? h : h / 2,
+})
 
 export function Stage({ compact }: { compact: boolean }) {
   const design = useEditor((s) => s.design)!
@@ -124,6 +149,7 @@ export function Stage({ compact }: { compact: boolean }) {
   const canEditLocked = useEditor((s) => s.canEditLocked)
   const pan = useUi((s) => s.pan)
   const cropId = useUi((s) => s.cropId)
+  const drop = useUi((s) => s.drop)
 
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -178,8 +204,16 @@ export function Stage({ compact }: { compact: boolean }) {
     }
     stageApi.zoomStep = (dir) => setView(zoomAround(viewRef.current, stepZoom(viewRef.current.zoom, dir), centre()))
     stageApi.focus = () => boxRef.current?.focus({ preventScroll: true })
+    stageApi.pageAt = (cx, cy) => {
+      const r = boxRef.current?.getBoundingClientRect()
+      if (!r || cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return null
+      return toPage(viewRef.current, { x: cx - r.left, y: cy - r.top })
+    }
+    stageApi.frameAt = (cx, cy) => frameUnder(stageApi.pageAt(cx, cy))
     return () => {
       stageApi.zoomTo = stageApi.zoomStep = stageApi.focus = () => {}
+      stageApi.pageAt = () => null
+      stageApi.frameAt = () => null
     }
   }, [setView])
 
@@ -226,14 +260,26 @@ export function Stage({ compact }: { compact: boolean }) {
     const ctx = c.getContext('2d')!
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, W, H)
-    drawPage(ctx, design, page, {
+    // a photo dragged over a frame shows in it before the drop (only once the picture has loaded)
+    const shown =
+      drop?.src && getImage(drop.src)
+        ? {
+            ...page,
+            elements: page.elements.map((e) =>
+              e.id === drop.id && e.type === 'image'
+                ? ({ ...e, src: drop.src!, bind: undefined, focus: { x: 0.5, y: 0.5 }, zoom: 1, cropFor: undefined, fit: 'cover' } as ImageEl)
+                : e,
+            ),
+          }
+        : page
+    drawPage(ctx, design, shown, {
       scale: view.zoom * dpr,
       origin: { x: Math.round(view.x * dpr), y: Math.round(view.y * dpr) },
       showMissing: true,
       skip: editingTextId ? new Set([editingTextId]) : undefined,
       resolveImage,
     })
-  }, [design, page, view, size, editingTextId, tick])
+  }, [design, page, view, size, editingTextId, tick, drop])
 
   // ── helpers ───────────────────────────────────────────────
 
@@ -241,7 +287,9 @@ export function Stage({ compact }: { compact: boolean }) {
     const r = boxRef.current!.getBoundingClientRect()
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
-  const movable = useCallback((el: El) => !readOnly && !el.locked, [readOnly])
+  // brand locks stop dragging for everyone (managers unlock first); template photo frames for everyone but admins
+  const pinned = useCallback((el: El) => !!el.locked || lockedFor(el, canEditLocked), [canEditLocked])
+  const movable = useCallback((el: El) => !readOnly && !pinned(el), [readOnly, pinned])
 
   const selEls = useMemo(() => page.elements.filter((e) => selection.includes(e.id)), [page, selection])
   const frame = hud.frame ?? frameOf(selEls)
@@ -283,10 +331,10 @@ export function Stage({ compact }: { compact: boolean }) {
     if (!pg || !st.design) return
     const hitEl_ = cur.hit ? pg.elements.find((e) => e.id === cur.hit) : null
     const additive = cur.mods.shift || cur.mods.meta
-    if (hitEl_ && !st.readOnly && !hitEl_.locked) {
+    if (hitEl_ && !st.readOnly && !pinned(hitEl_)) {
       // Shift/Cmd-drag on an unselected element adds it, then moves everything (Shift also constrains the axis)
       if (!cur.hitSelected && additive) st.select([hitEl_.id], 'add')
-      let els = selectedEls(useEditor.getState()).filter((e) => !e.locked)
+      let els = selectedEls(useEditor.getState()).filter((e) => !pinned(e))
       if (els.length) {
         st.beginGesture()
         useUi.getState().setGesturing(true)
@@ -350,7 +398,7 @@ export function Stage({ compact }: { compact: boolean }) {
       const crop = useUi.getState().cropId
       const hit = hitTest(pg.elements, p, 3 / v.zoom, d.fields)
       if (crop) setCursor(hit?.id === crop ? 'grab' : 'default')
-      else setCursor(hit && st.selection.includes(hit.id) && !hit.locked && !st.readOnly ? 'move' : 'default')
+      else setCursor(hit && st.selection.includes(hit.id) && !pinned(hit) && !st.readOnly ? 'move' : 'default')
       setHover(hit && !st.selection.includes(hit.id) ? hit.id : null)
       return
     }
@@ -485,7 +533,7 @@ export function Stage({ compact }: { compact: boolean }) {
           const b = aabb(e)
           if (!intersects(b, rect)) return false
           // locked layers (backgrounds) only join when fully enclosed
-          return !e.locked || (b.x >= rect.x && b.y >= rect.y && b.x + b.w <= rect.x + rect.w && b.y + b.h <= rect.y + rect.h)
+          return !pinned(e) || (b.x >= rect.x && b.y >= rect.y && b.x + b.w <= rect.x + rect.w && b.y + b.h <= rect.y + rect.h)
         })
         .map((e) => e.id)
       const next = [...new Set([...cur.base, ...ids])]
@@ -504,12 +552,26 @@ export function Stage({ compact }: { compact: boolean }) {
     }
 
     if (cur.k === 'crop') {
-      let d2 = { x: p.x - cur.p0.x, y: p.y - cur.p0.y }
-      if (cur.rot) d2 = rotatePt(d2, { x: 0, y: 0 }, -cur.rot)
-      if (cur.flip) d2.x = -d2.x
-      const fx = Math.max(cur.rx, Math.min(1 - cur.rx, cur.fx - d2.x * cur.kx))
-      const fy = Math.max(cur.ry, Math.min(1 - cur.ry, cur.fy - d2.y * cur.ky))
-      st.updateEl(cur.id, { focus: { x: Math.round(fx * 1000) / 1000, y: Math.round(fy * 1000) / 1000 } } as Partial<El>, { transient: true })
+      const el0 = cur.el0
+      const q = toFrameSpace(el0, p)
+      if (cur.how === 'trim' && cur.edge) {
+        // the frame changes size and place on the page; the photo stays where it is
+        const F = trimFrame(cur.P0, cur.edge, q, el0.w, el0.h, 16 / v.zoom)
+        const box = trimmedOnPage(el0, F)
+        const P = { ...cur.P0, x: cur.P0.x - F.x, y: cur.P0.y - F.y }
+        const c = cropOf(P, cur.iw, cur.ih, F.w, F.h)
+        st.updateEl(cur.id, { x: Math.round(box.x * 10) / 10, y: Math.round(box.y * 10) / 10, w: Math.round(F.w * 10) / 10, h: Math.round(F.h * 10) / 10 } as Partial<El>, { transient: true })
+        st.setPhoto(cur.id, { ...c, cropFor: cur.src }, { transient: true })
+        setHud({ ...NO_HUD, mode: 'crop', tip: { text: `${Math.round(F.w)} × ${Math.round(F.h)}`, ...tipAt } })
+      } else {
+        const P =
+          cur.how === 'scale' && cur.corner
+            ? scalePhoto(cur.P0, cur.corner, q, cur.iw, cur.ih, el0.w, el0.h)
+            : movePhoto(cur.P0, q.x - cur.q0.x, q.y - cur.q0.y, el0.w, el0.h)
+        const c = cropOf(P, cur.iw, cur.ih, el0.w, el0.h)
+        st.setPhoto(cur.id, { ...c, cropFor: cur.src }, { transient: true })
+        if (cur.how === 'scale') setHud({ ...NO_HUD, mode: 'crop', tip: { text: `${Math.round(c.zoom * 100)}%`, ...tipAt } })
+      }
     }
   }
 
@@ -576,33 +638,31 @@ export function Stage({ compact }: { compact: boolean }) {
     }
     if (e.button !== 0) return
 
-    // adjust-photo mode: drag inside the photo moves its focal point
+    // Crop mode: the photo's corners resize it, the frame's handles trim the frame (not on a template frame for
+    // recruiters), dragging anywhere on the photo moves it inside the frame; anywhere else leaves Crop
     const crop = useUi.getState().cropId
     if (crop) {
       const el = pg.elements.find((x) => x.id === crop)
-      if (el && el.type === 'image' && hitEl(el, p)) {
-        const info = st.design ? imageInfo(el, st.design) : null
-        if (info && el.fit === 'cover') {
-          const r = coverRect(info.iw, info.ih, el.w, el.h, el.focus, el.zoom)
-          st.beginGesture()
-          g.current = {
-            k: 'crop',
-            id: el.id,
-            p0: p,
-            fx: (r.sx + r.sw / 2) / info.iw,
-            fy: (r.sy + r.sh / 2) / info.ih,
-            kx: r.sw / el.w / info.iw,
-            ky: r.sh / el.h / info.ih,
-            rx: r.sw / 2 / info.iw,
-            ry: r.sh / 2 / info.ih,
-            rot: el.rotation,
-            flip: !!el.flipX,
-          }
-          setHud({ ...NO_HUD, mode: 'crop' })
-          setCursor('grabbing')
+      const info = el && el.type === 'image' && st.design ? imageInfo(el, st.design) : null
+      if (el && el.type === 'image' && info && el.fit === 'cover') {
+        const q = toFrameSpace(el, p)
+        const P0 = photoBox(info.iw, info.ih, el.w, el.h, info.focus, el.zoom)
+        const near = (pt: Pt) => {
+          const a = toScreen(v, fromFrameSpace(el, pt))
+          return Math.hypot(a.x - s.x, a.y - s.y) <= (touch ? 18 : 10)
         }
-        return
-      }
+        const corner = CORNERS.find((c) => near(cornerOf(P0, c)))
+        const edge = !corner && !lockedFor(el, st.canEditLocked) ? EDGES.find((ed) => near(edgeOf(el.w, el.h, ed))) : undefined
+        const inPhoto = q.x >= P0.x && q.x <= P0.x + P0.w && q.y >= P0.y && q.y <= P0.y + P0.h
+        if (corner || edge || inPhoto) {
+          st.beginGesture()
+          useUi.getState().setGesturing(true)
+          g.current = { k: 'crop', id: el.id, how: corner ? 'scale' : edge ? 'trim' : 'move', corner, edge, q0: q, P0, iw: info.iw, ih: info.ih, src: info.src, el0: el }
+          setHud({ ...NO_HUD, mode: 'crop' })
+          setCursor(corner || edge ? 'crosshair' : 'grabbing')
+          return
+        }
+      } else if (el && hitEl(el, p)) return
       useUi.getState().setCrop(null)
     }
 
@@ -803,12 +863,21 @@ export function Stage({ compact }: { compact: boolean }) {
   // ── drop files ────────────────────────────────────────────
 
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    useUi.getState().setDrop(null)
     const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))
     if (!files.length) return
     e.preventDefault()
     const p = toPage(viewRef.current, local(e))
-    files.slice(0, 8).forEach((f, i) => void uploadAndAdd(f, { x: p.x + i * 24, y: p.y + i * 24 }))
+    // a photo dropped on a frame goes into it (the first one, when several are dropped); the rest are added
+    const frameId = frameUnder(p)
+    const rest = frameId ? files.slice(1) : files
+    if (frameId) void uploadIntoFrame(files[0], frameId)
+    rest.slice(0, 8).forEach((f, i) => void uploadAndAdd(f, { x: p.x + i * 24, y: p.y + i * 24 }))
   }
+
+  // ── crop overlay geometry ─────────────────────────────────
+  const cropInfo = cropEl && cropEl.type === 'image' && cropEl.fit === 'cover' ? imageInfo(cropEl, design) : null
+  const cropBox = cropEl && cropEl.type === 'image' && cropInfo ? photoBox(cropInfo.iw, cropInfo.ih, cropEl.w, cropEl.h, cropInfo.focus, cropEl.zoom) : null
 
   // ── overlay geometry ──────────────────────────────────────
 
@@ -836,7 +905,7 @@ export function Stage({ compact }: { compact: boolean }) {
   const busy = hud.mode !== null
   const showChrome = !busy && !editingEl && !cropEl
   const selBox = frame ? aabb(frame) : null
-  const lockEls = [...selEls, ...(hoverEl && !selEls.some((s) => s.id === hoverEl.id) ? [hoverEl] : [])].filter((e) => e.locked)
+  const lockEls = [...selEls, ...(hoverEl && !selEls.some((s) => s.id === hoverEl.id) ? [hoverEl] : [])].filter((e) => pinned(e))
 
   const stageCursor = hud.mode === 'pan' ? 'grabbing' : tool === 'hand' || space ? (hud.mode ? 'grabbing' : 'grab') : hud.mode === 'move' ? 'move' : cursor
 
@@ -851,7 +920,7 @@ export function Stage({ compact }: { compact: boolean }) {
     const pos = clampBox((tl.x + br.x) / 2 - w / 2, y, w, 40, size)
     bar = { left: pos.x + w / 2, top: pos.y }
   }
-  const allLocked = selEls.length > 0 && selEls.every((e) => e.locked)
+  const allLocked = selEls.length > 0 && selEls.every((e) => pinned(e))
 
   return (
     <div
@@ -870,7 +939,14 @@ export function Stage({ compact }: { compact: boolean }) {
         useUi.getState().setMenu({ x: e.clientX, y: e.clientY, page: toPage(viewRef.current, local(e)) })
       }}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        // a file from the computer over a photo frame: outline the frame it will go into
+        const id = frameUnder(toPage(viewRef.current, local(e)))
+        useUi.getState().setDrop(id ? { id, src: null } : null)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) useUi.getState().setDrop(null)
       }}
       onDrop={onDrop}
       data-testid="studio-stage"
@@ -891,6 +967,59 @@ export function Stage({ compact }: { compact: boolean }) {
 
       <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={size.w} height={size.h} aria-hidden>
         {hoverEl && box(hoverEl, 'hover', accent, 1.5)}
+        {/* snap into frame: the frame a dragged photo will go into */}
+        {(() => {
+          const t = drop ? page.elements.find((e) => e.id === drop.id) : undefined
+          if (!t || t.type !== 'image') return null
+          const c = sc({ x: t.x + t.w / 2, y: t.y + t.h / 2 })
+          return (
+            <path
+              key="drop"
+              d={frameD(frameCmds(t.frame, t.w, t.h, t.radius), z, (-t.w * z) / 2, (-t.h * z) / 2)}
+              fill="rgb(var(--accent) / .08)"
+              stroke={accent}
+              strokeWidth={3}
+              transform={`translate(${c.x} ${c.y}) rotate(${t.rotation})`}
+            />
+          )
+        })()}
+        {/* Crop: the whole photo, faded outside the frame, with its corner handles; the frame's trim handles */}
+        {cropEl && cropEl.type === 'image' && cropInfo && cropBox && !editingEl && (() => {
+          const el = cropEl
+          const c = sc({ x: el.x + el.w / 2, y: el.y + el.h / 2 })
+          const flip = el.flipX ? ` translate(${el.w * z} 0) scale(-1 1)` : ''
+          const P = cropBox
+          const trim = !readOnly && !lockedFor(el, canEditLocked)
+          const mid = `crop-mask-${el.id}`
+          return (
+            <g key="crop" transform={`translate(${c.x} ${c.y}) rotate(${el.rotation}) translate(${(-el.w * z) / 2} ${(-el.h * z) / 2})${flip}`}>
+              <defs>
+                <mask id={mid} maskUnits="userSpaceOnUse" x={P.x * z} y={P.y * z} width={P.w * z} height={P.h * z}>
+                  <rect x={P.x * z} y={P.y * z} width={P.w * z} height={P.h * z} fill="#fff" />
+                  <path d={frameD(frameCmds(el.frame, el.w, el.h, el.radius), z)} fill="#000" />
+                </mask>
+              </defs>
+              <image href={cropInfo.src} x={P.x * z} y={P.y * z} width={P.w * z} height={P.h * z} preserveAspectRatio="none" opacity={0.42} mask={`url(#${mid})`} />
+              <rect x={P.x * z} y={P.y * z} width={P.w * z} height={P.h * z} fill="none" stroke="#fff" strokeWidth={1} opacity={0.9} />
+              <path d={frameD(frameCmds(el.frame, el.w, el.h, el.radius), z)} fill="none" stroke={accent} strokeWidth={1.5} />
+              {trim &&
+                EDGES.map((ed) => {
+                  const q = edgeOf(el.w, el.h, ed)
+                  const corner = ed.length === 2
+                  const across = ed === 'e' || ed === 'w'
+                  return corner ? (
+                    <rect key={ed} x={q.x * z - 5} y={q.y * z - 5} width={10} height={10} rx={2} fill={accent} stroke="#fff" strokeWidth={1.5} />
+                  ) : (
+                    <rect key={ed} x={q.x * z - (across ? 3 : 8)} y={q.y * z - (across ? 8 : 3)} width={across ? 6 : 16} height={across ? 16 : 6} rx={3} fill={accent} stroke="#fff" strokeWidth={1.5} />
+                  )
+                })}
+              {CORNERS.map((cn) => {
+                const q = cornerOf(P, cn)
+                return <circle key={cn} cx={q.x * z} cy={q.y * z} r={7} fill="#fff" stroke={accent} strokeWidth={2} />
+              })}
+            </g>
+          )
+        })()}
         {!editingEl && selEls.length > 1 && selEls.map((e) => box(e, e.id, accent, 1))}
         {!editingEl && frame && selEls.length > 0 && box(frame, 'frame', accent, selEls.length > 1 ? 1 : 1.5, cropEl || selEls.length > 1 ? '5 4' : undefined)}
         {hud.guides.map((gd, i) => {
@@ -971,7 +1100,19 @@ export function Stage({ compact }: { compact: boolean }) {
 
       {editingEl && editingEl.type === 'text' && <TextEditor key={editingEl.id} el={editingEl} view={view} />}
 
-      {cropEl && cropEl.type === 'image' && selBox && !busy && <CropBar el={cropEl} view={view} size={size} />}
+      {cropEl && cropEl.type === 'image' && selBox && !busy && (
+        <CropBar
+          el={cropEl}
+          view={view}
+          size={size}
+          below={
+            cropBox
+              ? CORNERS.map((cn) => toScreen(view, fromFrameSpace(cropEl, cornerOf(cropBox, cn)))).reduce((a, b) => (b.y > a.y ? b : a))
+              : null
+          }
+          src={cropInfo?.src}
+        />
+      )}
 
       {bar && (
         <div
@@ -979,7 +1120,17 @@ export function Stage({ compact }: { compact: boolean }) {
           className="card absolute flex -translate-x-1/2 items-center gap-0.5 p-1"
           style={{ ...bar, background: 'rgb(var(--surface-1))', cursor: 'default' }}
         >
-          {readOnly || (allLocked && !canEditLocked) ? (
+          {!readOnly && allLocked && !canEditLocked && selEls.length === 1 && isTemplateFrame(selEls[0]) ? (
+            // a template photo frame: the photo can be swapped (drag one onto it) and cropped, nothing else
+            <>
+              <span className="flex h-8 items-center gap-1.5 whitespace-nowrap px-2 text-[12px] font-semibold text-ink-2" title="Drag a photo onto it to swap it">
+                <Lock size={13} /> Template frame
+              </span>
+              <IconBtn title="Crop the photo (double-click)" onClick={() => enterElement(selEls[0].id)}>
+                <Crop size={15} />
+              </IconBtn>
+            </>
+          ) : readOnly || (allLocked && !canEditLocked) ? (
             <span className="flex h-8 items-center gap-1.5 whitespace-nowrap px-2 text-[12px] font-semibold text-ink-2">
               <Lock size={13} /> {readOnly ? 'View only' : 'Brand locked'}
             </span>
@@ -991,7 +1142,7 @@ export function Stage({ compact }: { compact: boolean }) {
                 </IconBtn>
               )}
               {selEls.length === 1 && selEls[0].type === 'image' && (
-                <IconBtn title="Adjust photo (double-click)" onClick={() => enterElement(selEls[0].id)}>
+                <IconBtn title="Crop (double-click)" onClick={() => enterElement(selEls[0].id)}>
                   <Crop size={15} />
                 </IconBtn>
               )}
@@ -1126,11 +1277,14 @@ function TextEditor({ el, view }: { el: TextEl; view: View }) {
 
 // ── adjust photo bar ────────────────────────────────────────
 
-function CropBar({ el, view, size }: { el: ImageEl; view: View; size: { w: number; h: number } }) {
+function CropBar({ el, view, size, below, src }: { el: ImageEl; view: View; size: { w: number; h: number }; below: Pt | null; src?: string }) {
   const b = aabb(el)
   const bl = toScreen(view, { x: b.x + b.w / 2, y: b.y + b.h })
-  const w = Math.min(300, size.w - 12)
-  const pos = clampBox(bl.x - w / 2, bl.y + 12, w, 44, size)
+  // under the whole photo (it reaches past the frame while cropping), else under the frame
+  const y = Math.max(bl.y, below?.y ?? 0)
+  const w = Math.min(330, size.w - 12)
+  const pos = clampBox(bl.x - w / 2, y + 12, w, 44, size)
+  const photo = useEditor.getState().setPhoto
   return (
     <div
       data-stage-ui
@@ -1140,15 +1294,17 @@ function CropBar({ el, view, size }: { el: ImageEl; view: View; size: { w: numbe
       <span className="eyebrow shrink-0 whitespace-nowrap">Zoom</span>
       {el.fit === 'cover' ? (
         <Slider
-          title="Photo zoom"
+          title="Photo zoom (or drag the photo's corners)"
           min={1}
-          max={3}
+          max={Math.max(3, Math.ceil(el.zoom))}
           step={0.01}
           value={el.zoom}
-          onChange={(v) => useEditor.getState().updateEl(el.id, { zoom: v } as Partial<El>)}
+          onChange={(v) => photo(el.id, { zoom: v, ...(src ? { cropFor: src, focus: el.focus } : {}) })}
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">Switch to “Fill” to re-frame</span>
+        <button type="button" className="btn h-7 min-w-0 flex-1 px-2 text-[12px]" onClick={() => photo(el.id, { fit: 'cover', zoom: 1 })}>
+          Fill the frame to crop
+        </button>
       )}
       <button type="button" className={clsx('btn btn-primary h-7 shrink-0 px-2.5 text-[12px]')} onClick={() => useUi.getState().setCrop(null)}>
         Done

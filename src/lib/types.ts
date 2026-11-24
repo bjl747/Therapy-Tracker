@@ -1,5 +1,5 @@
 // HUB SHIM — the hub's FeatureKey union. Migration: add 'studio' to the real one.
-export type FeatureKey = 'hotjobs' | 'payintel' | 'studio'
+export type FeatureKey = 'hotjobs' | 'payintel' | 'studio' | 'studio_pdf'
 export type AccessLevel = 'none' | 'view' | 'edit'
 export type Role = 'admin' | 'manager' | 'account_manager' | 'recruiter'
 

@@ -20,7 +20,7 @@ import {
   Ungroup,
   Unlock,
 } from 'lucide-react'
-import { selectedEls, useEditor } from './store'
+import { lockedFor, selectedEls, useEditor } from './store'
 import { stageApi, useUi, type LeftTab } from './uiStore'
 import { addShape, addText, autoAnimate, copySelection, cutSelection, markSystemClipboard, pasteClip } from './actions'
 import { MenuList, MOD, Popover, Portal, useLayer, type MenuItem } from './ui'
@@ -33,7 +33,7 @@ export function ContextMenu() {
   const els = menu ? selectedEls(st) : []
   const has = els.length > 0
   const ro = st.readOnly
-  const lockedOut = ro || (els.some((e) => e.locked) && !st.canEditLocked)
+  const lockedOut = ro || els.some((e) => lockedFor(e, st.canEditLocked))
   const grouped = els.some((e) => e.groupId)
   const allLocked = has && els.every((e) => e.locked)
   const items: MenuItem[] = [

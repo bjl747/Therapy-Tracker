@@ -150,6 +150,13 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       }
       await setDoc(row('summaries', d.id), summary, { merge: true })
     },
+    // My designs fills in a missing thumbnail (2026-11-19): only the summary's thumb changes, so the list order and
+    // "updated" times stay as they were. Rules: summaries update = owner or manager / admin, owner unchanged (merge).
+    async saveThumb(id, thumb) {
+      const url = await uploadBlob(`studio/${uid()}/thumbs/${id}.png`, dataUrlToBlob(thumb), 'no-cache')
+      await setDoc(row('summaries', id), { thumb: url }, { merge: true })
+      return url
+    },
     async deleteDesign(id) {
       // Storage files stay: a duplicate shares its images, and Undo brings the design back with the same links
       await deleteDoc(row('designs', id))
@@ -189,9 +196,10 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       await deleteDoc(row('assets', id))
     },
 
-    // a person's own photos ("Your uploads"); each person lists only their own, managers included
-    async listUploads() {
-      const snap = await getDocs(query(rows('uploads'), where('ownerUid', '==', uid())))
+    // a person's own photos ("Uploads"). Everyone lists their own; managers and admins may also list the team's
+    // (BJ, 2026-11-19; rules: hub_studio uploads read = owner or hubManager()).
+    async listUploads(o) {
+      const snap = await getDocs(o?.team ? rows('uploads') : query(rows('uploads'), where('ownerUid', '==', uid())))
       return snap.docs.map((s) => cleanAsset(s.data() as StoredAsset)).sort(byNewest)
     },
     async uploadImage(file) {
@@ -199,7 +207,7 @@ export function makeFirestoreRepo(opts: { seeAll: boolean }): StudioRepo {
       const id = newId('u')
       const path = `studio/${uid()}/uploads/${id}.${extOf(blob.type)}`
       const url = await uploadBlob(path, blob)
-      const a: StoredAsset = { id, name: file.name.slice(0, 80), url, kind: 'photo', w, h, createdAt: Date.now(), ownerUid: uid(), path }
+      const a: StoredAsset = { id, name: file.name.slice(0, 80), url, kind: 'photo', w, h, createdAt: Date.now(), ownerUid: uid(), ...(myName() ? { ownerName: myName() } : {}), path }
       try {
         await setDoc(row('uploads', id), a)
       } catch (e) {

@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   FilePlus2,
   Info,
   Lock,
+  MousePointerClick,
   Pencil,
   Plus,
   Redo2,
@@ -29,9 +30,65 @@ import { DocumentPanel, ExportBar, FormsPanel, SplitPanel } from './Panels'
 import { usePdfStudio } from './store'
 import { useExporter } from './useExporter'
 
+/** Only fields you type into own the keys; a ticked checkbox, slider or button does not. */
+const NOT_TEXT = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color', 'image'])
 function isTyping(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+  if (!el || !el.tagName) return false
+  if (el.tagName === 'INPUT') return !NOT_TEXT.has((el as HTMLInputElement).type)
+  return el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+}
+
+/** Inside a modal dialog (PDF Studio's page editor, or a hub pop-up). */
+const inDialog = (t: EventTarget | null) => t instanceof Element && !!t.closest('[aria-modal="true"]')
+
+/* ------------------------------------------------------------ adding files */
+
+type FsEntry = {
+  isFile: boolean
+  isDirectory: boolean
+  name: string
+  file?: (ok: (f: File) => void, fail: (e: unknown) => void) => void
+  createReader?: () => { readEntries: (ok: (es: FsEntry[]) => void, fail: (e: unknown) => void) => void }
+}
+
+/** Every file in a dropped folder (and its sub-folders), sorted by name within each folder. */
+async function filesOf(entry: FsEntry): Promise<File[]> {
+  if (entry.isFile && entry.file) {
+    const f = await new Promise<File | null>((ok) => entry.file!(ok, () => ok(null)))
+    return f ? [f] : []
+  }
+  if (!entry.isDirectory || !entry.createReader) return []
+  const reader = entry.createReader()
+  const all: FsEntry[] = []
+  // readEntries returns the folder in batches (about 100 at a time) until an empty batch
+  for (;;) {
+    const batch = await new Promise<FsEntry[]>((ok) => reader.readEntries(ok, () => ok([])))
+    if (!batch.length) break
+    all.push(...batch)
+  }
+  all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+  const out: File[] = []
+  for (const e of all) if (!e.name.startsWith('.')) out.push(...(await filesOf(e)))
+  return out
+}
+
+/** The dropped items, with folders opened up. Must be called while the drop event is being handled. */
+function droppedFiles(dt: DataTransfer): Promise<File[]> {
+  const items = Array.from(dt.items ?? []).filter((it) => it.kind === 'file')
+  const entries = items.map((it) => (it as DataTransferItem & { webkitGetAsEntry?: () => FsEntry | null }).webkitGetAsEntry?.() ?? null)
+  if (!entries.some((e) => e?.isDirectory)) return Promise.resolve(Array.from(dt.files))
+  const plain = Array.from(dt.files)
+  return Promise.all(entries.map((e, i) => (e ? filesOf(e) : Promise.resolve(plain[i] ? [plain[i]] : [])))).then((lists) => lists.flat())
+}
+
+/** Drops and picks are read one batch after another, so two quick drops never mix their pages. */
+let queue: Promise<void> = Promise.resolve()
+function addFiles(files: File[] | Promise<File[]>): void {
+  queue = queue.then(async () => {
+    const list = await files
+    if (list.length) await ingestFiles(list)
+  }).catch(() => undefined)
 }
 
 interface TBProps {
@@ -43,14 +100,16 @@ interface TBProps {
   /** Always show the text label (otherwise icon-only below xl). */
   showLabel?: boolean
   title?: string
+  /** Added to the tooltip while the button is disabled (why it is). */
+  whyOff?: string
 }
-function TB({ icon, label, onClick, disabled, primary, showLabel, title }: TBProps) {
+function TB({ icon, label, onClick, disabled, primary, showLabel, title, whyOff }: TBProps) {
   return (
     <button
       type="button"
       className={clsx('btn', primary && 'btn-primary', !showLabel && '!px-2.5 xl:!px-3')}
       aria-label={label}
-      title={title ?? label}
+      title={`${title ?? label}${disabled && whyOff ? ` · ${whyOff}` : ''}`}
       disabled={disabled}
       onClick={onClick}
     >
@@ -60,7 +119,13 @@ function TB({ icon, label, onClick, disabled, primary, showLabel, title }: TBPro
   )
 }
 
-export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
+export function PdfStudio({ onBack, owner }: { onBack?: () => void; owner?: string } = {}) {
+  // the hub's signed-in user: another person's (or a signed-out session's) documents are cleared before the
+  // screen paints (layout effect, not during render: changing the store mid-render upsets React)
+  useLayoutEffect(() => {
+    if (owner !== undefined) usePdfStudio.getState().claim(owner)
+  }, [owner])
+
   const pages = usePdfStudio((s) => s.pages)
   const sel = usePdfStudio((s) => s.sel)
   const loading = usePdfStudio((s) => s.loading)
@@ -68,6 +133,7 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
   const notices = usePdfStudio((s) => s.notices)
   const canUndo = usePdfStudio((s) => s.hist.past.length > 0)
   const canRedo = usePdfStudio((s) => s.hist.future.length > 0)
+  const layout = usePdfStudio((s) => s.layout)
   const st = usePdfStudio.getState
 
   const ex = useExporter()
@@ -75,20 +141,56 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
   const [over, setOver] = useState(false)
   const dragDepth = useRef(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   const add = useCallback((files: FileList | File[] | null) => {
     if (!files || !files.length) return
-    void ingestFiles(Array.from(files))
+    addFiles(Array.from(files))
+  }, [])
+
+  // A file dropped anywhere else on the hub (header, left menu) would make the browser open it in this tab and lose
+  // the document: take it here instead. Leaving the page with pages open asks first.
+  useEffect(() => {
+    const isFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    const over = (e: DragEvent) => {
+      if (!isFiles(e) || e.defaultPrevented) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = inDialog(e.target) ? 'none' : 'copy'
+    }
+    const drop = (e: DragEvent) => {
+      if (!isFiles(e) || e.defaultPrevented) return
+      e.preventDefault()
+      if (e.dataTransfer && !inDialog(e.target)) addFiles(droppedFiles(e.dataTransfer))
+    }
+    const unload = (e: BeforeUnloadEvent) => {
+      if (!usePdfStudio.getState().pages.length) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    window.addEventListener('beforeunload', unload)
+    return () => {
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+      window.removeEventListener('beforeunload', unload)
+    }
   }, [])
 
   // keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target)) return
+      if (e.defaultPrevented || isTyping(e.target)) return
+      const t = e.target as Element | null
+      const modalOpen = layerCount() > 0
+      // only keys pressed on PDF Studio itself (or with nothing focused); never while focus is in the hub's header,
+      // menu or pop-ups. With the page editor open, its dialog counts as PDF Studio.
+      const onPage = !t || t === document.body || t === document.documentElement || !!rootRef.current?.contains(t)
+      const inEditor = modalOpen && !!t?.closest?.('[aria-modal="true"]') && !t.closest('header, nav')
+      if (!onPage && !inEditor) return
       const mod = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
       const s = st()
-      const modalOpen = layerCount() > 0
       if (mod && k === 'z') {
         e.preventDefault()
         if (e.shiftKey) s.redo()
@@ -122,7 +224,8 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
     return () => window.removeEventListener('keydown', onKey)
   }, [st])
 
-  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+  // drags over the page editor (a portal, so its events reach here) are not drops into the document
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files') && !inDialog(e.target)
   const dropProps = {
     onDragEnter: (e: React.DragEvent) => {
       if (!hasFiles(e)) return
@@ -145,15 +248,17 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
       e.preventDefault()
       dragDepth.current = 0
       setOver(false)
-      add(e.dataTransfer.files)
+      addFiles(droppedFiles(e.dataTransfer))
     },
   }
 
   const none = sel.ids.length === 0
+  const letter = layout === 'letter'
+  const PICK = 'select a page first'
   const showGrid = pages.length > 0 || loading > 0
 
   return (
-    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col gap-3 px-4 py-3 md:px-6" {...dropProps}>
+    <div ref={rootRef} className="relative flex h-full min-h-0 w-full min-w-0 flex-col gap-3 px-4 py-3 md:px-6" {...dropProps}>
       <input
         ref={fileRef}
         type="file"
@@ -226,19 +331,25 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
             <TB icon={<Redo2 size={14} />} label="Redo" title="Redo (Shift+Ctrl+Z)" disabled={!canRedo} onClick={() => st().redo()} />
             <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
             <TB icon={<CheckSquare size={14} />} label="Select all" title="Select all (Ctrl+A)" disabled={!pages.length} onClick={() => st().selectAllPages()} />
-            <TB icon={<XSquare size={14} />} label="Clear" title="Clear selection (Esc)" disabled={none} onClick={() => st().clearSel()} />
+            <TB icon={<XSquare size={14} />} label="Deselect" title="Deselect (Esc)" disabled={none} whyOff="nothing is selected" onClick={() => st().clearSel()} />
             <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
-            <TB icon={<RotateCcw size={14} />} label="Rotate left" title="Rotate left (Shift+R)" disabled={none} onClick={() => st().rotateSel(-90)} />
-            <TB icon={<RotateCw size={14} />} label="Rotate right" title="Rotate right (R)" disabled={none} onClick={() => st().rotateSel(90)} />
-            <TB icon={<Copy size={14} />} label="Duplicate" disabled={none} onClick={() => st().duplicateSel()} />
-            <TB icon={<Trash2 size={14} />} label="Delete" title="Delete (Del)" disabled={none} onClick={() => st().deleteSel()} />
-            <TB icon={<FilePlus2 size={14} />} label="Blank page" title="Insert blank page (Letter)" disabled={!pages.length} onClick={() => st().insertBlank()} />
-            <TB icon={<ArrowUpToLine size={14} />} label="To start" disabled={none} onClick={() => st().moveSel('start')} />
-            <TB icon={<ArrowDownToLine size={14} />} label="To end" disabled={none} onClick={() => st().moveSel('end')} />
-            <TB icon={<Pencil size={14} />} label="Edit page" disabled={none} onClick={() => setEditId(sel.ids[0])} />
+            <TB icon={<RotateCcw size={14} />} label="Rotate left" title={letter ? 'Rotate left (Shift+R): turns the content on the page' : 'Rotate left (Shift+R)'} disabled={none} whyOff={PICK} onClick={() => st().rotateSel(-90)} />
+            <TB icon={<RotateCw size={14} />} label="Rotate right" title={letter ? 'Rotate right (R): turns the content on the page' : 'Rotate right (R)'} disabled={none} whyOff={PICK} onClick={() => st().rotateSel(90)} />
+            <TB icon={<Copy size={14} />} label="Duplicate" disabled={none} whyOff={PICK} onClick={() => st().duplicateSel()} />
+            <TB icon={<Trash2 size={14} />} label="Delete" title="Delete (Del)" disabled={none} whyOff={PICK} onClick={() => st().deleteSel()} />
+            <TB icon={<FilePlus2 size={14} />} label="Blank page" title={none ? 'Insert a blank page at the end' : 'Insert a blank page after the selection'} disabled={!pages.length} whyOff="add a file first" onClick={() => st().insertBlank()} />
+            <TB icon={<ArrowUpToLine size={14} />} label="To start" title="Move to the start" disabled={none} whyOff={PICK} onClick={() => st().moveSel('start')} />
+            <TB icon={<ArrowDownToLine size={14} />} label="To end" title="Move to the end" disabled={none} whyOff={PICK} onClick={() => st().moveSel('end')} />
+            <TB icon={<Pencil size={14} />} label="Edit page" title="Edit page (or double-click a page)" disabled={none} whyOff={PICK} onClick={() => setEditId(sel.ids[0])} />
             <span className="ml-auto whitespace-nowrap pl-2 text-xs tabular-nums text-ink-3">
               {sel.ids.length ? `${sel.ids.length} of ${pages.length} selected` : `${pages.length} ${pages.length === 1 ? 'page' : 'pages'}`}
             </span>
+            {none && pages.length > 0 && (
+              <p className="flex w-full min-w-0 items-center gap-1.5 px-1 pt-0.5 text-xs text-ink-2">
+                <MousePointerClick size={13} className="shrink-0 text-accent" />
+                <span className="min-w-0">Click a page to select it (Shift/Ctrl for more), then rotate, move or delete.</span>
+              </p>
+            )}
           </div>
 
           <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
@@ -255,7 +366,7 @@ export function PdfStudio({ onBack }: { onBack?: () => void } = {}) {
                   <Upload size={22} />
                 </div>
                 <div>
-                  <p className="text-base font-bold text-ink">Drop PDFs and images here</p>
+                  <p className="text-base font-bold text-ink">Drop PDFs, images or a folder here</p>
                   <p className="mt-1 text-sm text-ink-2">PNG, JPG and WebP images become one page each. Add as many files as you like.</p>
                 </div>
                 <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}>

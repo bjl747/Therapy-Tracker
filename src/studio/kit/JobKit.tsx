@@ -1,40 +1,43 @@
 // ─────────────────────────────────────────────────────────────
-// Job Kit — the fast path. Type (or paste) a job once → every size of the
-// post, an animated GIF and a ready caption, with the right city photo.
+// Job Kit — the fast path. Type a job once (or pick a Hot Job) → every size of
+// the post, an animated GIF and a ready caption, with the right city photo.
+// Many jobs: the same form for up to five jobs → the roundup post + a kit each.
 // ─────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowLeft, ListChecks, Lock, Send, History, Briefcase, Check, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, Maximize2, PencilLine, Rows3, Shuffle, Sparkles, X,
+  AlertTriangle, ArrowLeft, ListChecks, Lock, Send, History, Briefcase, Check, ChevronDown, ChevronUp, ClipboardCopy, Download, Film, ImageDown, Layers, MapPin, Maximize2, PencilLine, Plus, Rows3, Shuffle, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { SIZES, uid, type Design, type FieldDef } from '../engine/model'
 import { instantiate } from '../templates/instantiate'
 import type { TemplateDef } from '../templates/types'
 import { BUILT_IN_TEMPLATES } from '../templates'
-import { useTemplates, kitTemplates, roundupTemplates, useTemplateLib, effectiveTemplates } from '../templates/store'
-const useTemplateLibSnapshot = () => effectiveTemplates(useTemplateLib.getState().saved)
+import { useTemplates, kitTemplates, roundupTemplates } from '../templates/store'
 import { HOT_JOBS_ROUNDUP, roundupFields } from '../templates/roundup'
 import { DesignCanvas, useAssetTick } from '../ui/DesignCanvas'
 import { caption } from './captions'
 import { tidyField } from './normalize'
-import { parseJobs } from './batch'
 import { nearbyCities, resolveLocation, searchCities, thumbUrl, cityIndex, type CityPhoto } from '../photos/cities'
 import { formatLocation } from '../photos/location'
-import { prepareDesign, resolveImage } from '../services'
+import { isPhotoLink, prepareDesign, resolveImage } from '../services'
 import { repo, stashPreview } from '../data'
 import { useToast } from '../ui/toast'
 import { copyPngPromiseToClipboard, exportPng } from '../export/raster'
 import { LocationInput } from './LocationInput'
 import { HotJobPicker } from './HotJobPicker'
 import { PayCalc } from './PayCalc'
-import { PAY_KEYS } from './connectors'
+import { MAX_JOBS, blankJob, isBlankJob, isReadyJob, openSlots, placeHotJobs, withHotJob } from './many'
 import { useAuth } from '@/context/AuthContext'
 import { kitWarnings } from './warnings'
+import { designThumb } from '../export/thumb'
+import { UploadsPick } from './UploadsPick'
+import { getKitLink, jobKey, kitPostName, sameSource, setKitLink, type KitSource } from './link'
+import { KIT_KEYS, claimKitStorage } from './storage'
 
-const DRAFT_KEY = 'studio.kit.draft'
+const DRAFT_KEY = KIT_KEYS.draft
 
 function loadDraft(): Record<string, string> | null {
   try {
@@ -57,7 +60,36 @@ function pngOf(d: Design): Promise<Blob> {
   return prepareDesign(d).then(() => exportPng(d, 0, { scale: 1, resolveImage }))
 }
 
-const RECENT_KEY = 'studio.kit.recent'
+/** Many jobs' list, kept for this tab only (BJ, 2026-11-19: it starts blank, not from the One job form) so a trip to
+ *  the editor and back keeps it */
+const MANY_KEY = KIT_KEYS.many
+function loadMany(): Record<string, string>[] | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(MANY_KEY) ?? 'null')
+    return Array.isArray(v) && v.length ? v.slice(0, 5) : null
+  } catch {
+    return null
+  }
+}
+function saveMany(list: Record<string, string>[]) {
+  try {
+    sessionStorage.setItem(MANY_KEY, JSON.stringify(list))
+  } catch {
+    /* private mode */
+  }
+}
+
+/** download one design as a PNG or an animated GIF */
+async function downloadDesign(d: Design, name: string, kind: 'png' | 'gif') {
+  const { exportPng, downloadBlob } = await import('../export/raster')
+  await prepareDesign(d)
+  if (kind === 'gif') {
+    const { exportGif } = await import('../export/animate')
+    downloadBlob(await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }), `${name}.gif`)
+  } else downloadBlob(await exportPng(d, 0, { scale: 1, resolveImage }), `${name}.png`)
+}
+
+const RECENT_KEY = KIT_KEYS.recent
 function recentJobs(): Record<string, string>[] {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
@@ -88,7 +120,7 @@ function forGif(d: Design): Design {
   return { ...d, pages: d.pages.map((p) => ({ ...p, elements: p.elements.map((e) => (e.type === 'image' ? { ...e, kenBurns: false } : e)) })) }
 }
 
-/** render + encode everything for one job (shared by single + batch) */
+/** render + encode everything for one job (shared by One job and Many jobs) */
 async function buildKitFiles(
   t: TemplateDef,
   fields: Record<string, string>,
@@ -137,7 +169,10 @@ export function JobKit() {
   const nav = useNavigate()
   const toast = useToast()
   // View access: make and download posts; saving designs / the editor needs Edit (the rules say the same)
-  const canEdit = useAuth().can('studio') === 'edit'
+  const auth = useAuth()
+  const canEdit = auth.can('studio') === 'edit'
+  // the draft, Recent jobs and Many jobs belong to whoever typed them: another person's are cleared before they're read
+  claimKitStorage(auth.user?.uid ?? '')
   const { templates } = useTemplates()
   const choices = kitTemplates(templates)
   const [templateId, setTemplateId] = useState(() => {
@@ -156,17 +191,28 @@ export function JobKit() {
       /* private mode */
     }
   }
-  const [fields, setFields] = useState<Record<string, string>>(
+  // One job's form (kept as a draft in this browser)
+  const [oneFields, setOneFields] = useState<Record<string, string>>(
     () => loadDraft() ?? Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.example])),
   )
-  const [params] = useSearchParams()
-  const [mode, setMode] = useState<'one' | 'many'>(params.get('mode') === 'many' ? 'many' : 'one')
+  const [params, setParams] = useSearchParams()
+  const [mode, setModeState] = useState<'one' | 'many'>(params.get('mode') === 'many' ? 'many' : 'one')
+  // Many jobs (BJ, 2026-11-19): up to five job forms, starting with a blank one (not the One job form's job). Kept for
+  // this tab only, so a trip to the editor and back keeps them.
+  const [many, setMany] = useState<Record<string, string>[]>(() => loadMany() ?? [blankJob(template)])
+  const [openIdx, setOpenIdx] = useState(() => many.length - 1)
+  /** a Many jobs job opened in the full one-job view (all sizes, caption, its own kit). Coming back from one of its
+   *  posts (`?mode=many&job=n`, kit/link.ts) opens the same job again. */
+  const [focus, setFocus] = useState<number | null>(() => {
+    const j = Number(params.get('job') ?? NaN)
+    return params.get('mode') === 'many' && Number.isInteger(j) && j >= 0 && j < many.length ? j : null
+  })
   const [sizes, setSizes] = useState<string[]>(['square', 'story', 'landscape'])
   const [gif, setGif] = useState(true)
   const [variant, setVariant] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
-  const [photoPicker, setPhotoPicker] = useState(false)
-  const [hotOpen, setHotOpen] = useState(false)
+  /** From Hot Jobs: fill one job (`index` = a Many jobs job, null = the form on screen), or tick several (Many jobs) */
+  const [hot, setHot] = useState<{ kind: 'fill'; index: number | null } | { kind: 'many' } | null>(null)
   const previewsRef = useRef<HTMLElement>(null)
   // the page scrolls inside this box, above the action bar (which is a footer, not an overlay)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
@@ -176,10 +222,42 @@ export function JobKit() {
   const captionFit = useFits(captionEl, scroller)
   useAssetTick()
 
+  const setMode = (v: 'one' | 'many') => {
+    setFocus(null)
+    setModeState(v)
+    setParams(v === 'many' ? { mode: 'many' } : {}, { replace: true })
+  }
+
+  // the job number is only for the trip back from a post: drop it from the address once it's read
   useEffect(() => {
-    const t = setTimeout(() => saveDraft(fields), 400)
+    if (params.has('job')) setParams(mode === 'many' ? { mode: 'many' } : {}, { replace: true })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the one-job view edits the One job form, or the Many jobs job that was opened
+  const inFocus = mode === 'many' && focus !== null && !!many[focus]
+  /** which job the posts on screen belong to (a post opened from here writes its form back to it, kit/link.ts) */
+  const source: KitSource = inFocus ? { mode: 'many', index: focus! } : { mode: 'one' }
+  const fields = inFocus ? many[focus!] : oneFields
+  const setFields = useCallback(
+    (u: SetStateAction<Record<string, string>>) => {
+      if (inFocus) setMany((list) => list.map((j, i) => (i === focus ? (typeof u === 'function' ? u(j) : u) : j)))
+      else setOneFields(u)
+    },
+    [inFocus, focus],
+  )
+
+  useEffect(() => {
+    const t = setTimeout(() => saveDraft(oneFields), 400)
     return () => clearTimeout(t)
-  }, [fields])
+  }, [oneFields])
+  useEffect(() => {
+    const t = setTimeout(() => saveMany(many), 400)
+    return () => clearTimeout(t)
+  }, [many])
+  // opening a job (or going back to all jobs / switching mode) starts at the top
+  useEffect(() => {
+    scroller?.scrollTo({ top: 0 })
+  }, [focus, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // keep the size picks to sizes this template actually has
   const layoutKeys = Object.keys(template.layouts).join(',')
@@ -202,11 +280,6 @@ export function JobKit() {
     [template, fields],
   )
   const text = useMemo(() => caption(effective, variant), [effective, variant])
-  const match = fields.location ? resolveLocation(fields.location) : null
-  const pinned = fields['location__photo'] ? cityIndex().find((c) => c.id === fields['location__photo']) : undefined
-
-  const set = (k: string, v: string) => setFields((f) => ({ ...f, [k]: v }))
-  const tidy = (k: string) => setFields((f) => ({ ...f, [k]: tidyField(k, f[k] ?? '') }))
 
   const downloadKit = async () => {
     setBusy('Preparing…')
@@ -219,6 +292,33 @@ export function JobKit() {
       rememberJob(fields)
     } catch (e) {
       toast('Could not build the kit', e instanceof Error ? e.message : undefined, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Many jobs: a kit per job (every job with a title) in one ZIP */
+  const ready = many.filter(isReadyJob)
+  const downloadAll = async () => {
+    setBusy('Starting…')
+    try {
+      const all: { name: string; data: Blob | Uint8Array }[] = []
+      let done = 0
+      for (let i = 0; i < many.length; i++) {
+        const j = many[i]
+        if (!isReadyJob(j)) continue // blank jobs are skipped; folders keep the form's job number (Job 5 → 05-…)
+        done++
+        const folder = `${String(i + 1).padStart(2, '0')}-${slug(`${j.job_title}-${j.location}`)}/`
+        const files = await buildKitFiles(template, j, sizes, gif, folder, (m) => setBusy(`Job ${i + 1} (${done} of ${ready.length}): ${m}…`))
+        all.push(...files)
+      }
+      const { makeZip } = await import('../export/zip')
+      const { downloadBlob } = await import('../export/raster')
+      downloadBlob(await makeZip(all), `job-posts-${ready.length}.zip`)
+      ready.forEach(rememberJob)
+      toast(`${ready.length} kit${ready.length === 1 ? '' : 's'} downloaded`)
+    } catch (e) {
+      toast('Could not build the kits', e instanceof Error ? e.message : undefined, 'error')
     } finally {
       setBusy(null)
     }
@@ -262,14 +362,7 @@ export function JobKit() {
     if (busy) return
     setBusy(kind === 'gif' ? 'Making GIF…' : 'Rendering…')
     try {
-      const { exportPng, downloadBlob } = await import('../export/raster')
-      const d = designs[size]
-      await prepareDesign(d)
-      const name = slug(`${fields.job_title}-${fields.location}-${size}`)
-      if (kind === 'gif') {
-        const { exportGif } = await import('../export/animate')
-        downloadBlob(await exportGif(forGif(d), 0, { scale: GIF_SCALE, fps: GIF_FPS, hold: 3, resolveImage }), `${name}.gif`)
-      } else downloadBlob(await exportPng(d, 0, { scale: 1, resolveImage }), `${name}.png`)
+      await downloadDesign(designs[size], slug(`${fields.job_title}-${fields.location}-${size}`), kind)
     } catch (e) {
       toast('Download failed', e instanceof Error ? e.message : undefined, 'error')
     } finally {
@@ -277,22 +370,32 @@ export function JobKit() {
     }
   }
 
-  /** save every chosen size as a design (one kit) and open the one clicked */
+  /** save every chosen size as a design (one kit) and open the one clicked. Opening a post of the same job again
+   *  (back and forth with the post screen, BJ 2026-11-19) brings those designs up to date with the form instead of
+   *  saving a new set each time; canvas changes made on them are kept. */
   const opening = useRef(false)
   const openInEditor = async (size: string) => {
     if (opening.current) return // a double-click must not make two kits
     opening.current = true
     try {
-      const kitId = uid('k')
+      const prev = getKitLink()
+      const reuse =
+        prev?.kitId && prev.ids && prev.templateId === template.id && sameSource(prev.source, source) && prev.job === jobKey(fields) ? prev : null
+      const kitId = reuse?.kitId ?? uid('k')
+      const ids: Record<string, string> = { ...(reuse?.ids ?? {}) }
       let openId = ''
       for (const s of sizes.includes(size) ? sizes : [...sizes, size]) {
-        const d = instantiate(template, s, fields, {
+        const fresh = instantiate(template, s, fields, {
           kitId,
-          name: `${fields.job_title || 'Job post'} — ${fields.location || ''} (${SIZES[s as keyof typeof SIZES]?.label ?? s})`,
+          name: kitPostName(fields, s),
         })
-        await repo.saveDesign(d)
+        const old = ids[s] ? await repo.getDesign(ids[s]).catch(() => null) : null
+        const d = old ? { ...old, name: fresh.name, fields: fresh.fields, updatedAt: Date.now() } : fresh
+        await repo.saveDesign(d, await designThumb(d))
+        ids[s] = d.id
         if (s === size) openId = d.id
       }
+      setKitLink({ source, templateId: template.id, kitId, ids, job: jobKey(fields) })
       rememberJob(fields)
       nav(`/studio/design/${openId}`)
     } catch (e) {
@@ -305,29 +408,33 @@ export function JobKit() {
   /** View access: open a size full-size in the editor, read-only. Nothing is saved (the design is kept in this tab only). */
   const openPreview = (size: string) => {
     const d = instantiate(template, size, fields, {
-      name: `${fields.job_title || 'Job post'} — ${fields.location || ''} (${SIZES[size as keyof typeof SIZES]?.label ?? size})`,
+      name: kitPostName(fields, size),
     })
     stashPreview(d)
+    setKitLink({ source, templateId: template.id, previewId: d.id })
     rememberJob(fields)
     nav(`/studio/design/${d.id}`)
   }
 
-  const groups = useMemo(() => {
-    const g = new Map<string, FieldDef[]>()
-    // template-locked fields (job type, benefits, footer) aren't editable here
-    for (const f of template.fieldDefs.filter((x) => !x.locked)) g.set(f.group ?? 'Details', [...(g.get(f.group ?? 'Details') ?? []), f])
-    return [...g.entries()]
-  }, [template])
+  const slots = openSlots(many, template)
+  const manyList = mode === 'many' && !inFocus
+  const fileCount = sizes.length + (gif && sizes.includes('square') ? 1 : 0) + 1
 
   return (
     <div className="flex flex-col min-h-0 flex-1">
       <div ref={setScroller} className="flex-1 min-h-0 overflow-y-auto">
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 pt-4 pb-3">
-        <button className="btn" onClick={() => nav('/studio')} aria-label="Back to Studio">
-          <ArrowLeft size={15} />
-        </button>
+        {inFocus ? (
+          <button className="btn" onClick={() => setFocus(null)} aria-label="Back to all jobs" title="Back to all jobs">
+            <ArrowLeft size={15} />
+          </button>
+        ) : (
+          <button className="btn" onClick={() => nav('/studio')} aria-label="Back to Studio">
+            <ArrowLeft size={15} />
+          </button>
+        )}
         <div className="min-w-0">
-          <div className="eyebrow">Studio · Job Kit</div>
+          <div className="eyebrow">Studio · Job Kit{inFocus ? ` · Job ${focus! + 1} of ${many.length}` : ''}</div>
           {choices.length > 1 ? (
             <select
               className="text-[19px] font-extrabold leading-tight bg-transparent outline-none max-w-full truncate cursor-pointer"
@@ -346,7 +453,17 @@ export function JobKit() {
           )}
         </div>
         <div className="flex-1" />
-        <button className="btn" onClick={() => setHotOpen(true)}>
+        {inFocus && (
+          <button className="btn" onClick={() => setFocus(null)}>
+            <Rows3 size={15} /> All jobs
+          </button>
+        )}
+        <button
+          className="btn"
+          onClick={() => setHot(manyList ? { kind: 'many' } : { kind: 'fill', index: null })}
+          disabled={manyList && slots === 0}
+          title={manyList ? (slots ? `Pick up to ${slots} Hot Job${slots === 1 ? '' : 's'}` : `${MAX_JOBS} jobs is the most: remove one to add another`) : undefined}
+        >
           <Briefcase size={15} /> From Hot Jobs
         </button>
         <Seg
@@ -359,8 +476,23 @@ export function JobKit() {
         />
       </div>
 
-      {mode === 'many' ? (
-        <BatchMode template={template} sizes={sizes} gif={gif} onPick={(f) => { setFields(f); setMode('one') }} />
+      {manyList ? (
+        <ManyJobs
+          template={template}
+          jobs={many}
+          setJobs={setMany}
+          openIdx={openIdx}
+          setOpenIdx={setOpenIdx}
+          onOpenJob={setFocus}
+          onHot={(i) => setHot({ kind: 'fill', index: i })}
+          sizes={sizes}
+          setSizes={setSizes}
+          gif={gif}
+          setGif={setGif}
+          canEdit={canEdit}
+          busy={busy}
+          setBusy={setBusy}
+        />
       ) : (
         <div className="grid gap-4 px-4 md:px-6 pb-6 min-h-0 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)_380px]">
           {/* phone: the form and its mini preview share one box, so the preview follows only while the form is on screen
@@ -385,57 +517,15 @@ export function JobKit() {
           {/* ── job details ── */}
           <section ref={setDetailsEl} className={clsx('card card-accent p-4 min-w-0 self-start', detailsFit && 'lg:sticky lg:top-4')}>
             <div className="flex items-center justify-between mb-2">
-              <div className="eyebrow">Job details</div>
+              <div className="eyebrow">{inFocus ? `Job ${focus! + 1} details` : 'Job details'}</div>
               <button
                 className="text-[11.5px] font-semibold text-ink-3 hover:text-accent whitespace-nowrap"
-                onClick={() => setFields(Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.locked ? f.example : ''])))}
+                onClick={() => setFields(blankJob(template))}
               >
                 Clear all
               </button>
             </div>
-            <RecentJobs onPick={(f) => setFields({ ...f })} />
-            {groups.map(([g, defs]) => (
-              <fieldset key={g} className="mb-3">
-                <legend className="text-[11px] font-bold text-ink-2 mb-1.5">{g}</legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {/* the hub's pay calculator, above the pay fields it fills (hidden without the hub) */}
-                  {defs.some((f) => f.key === 'weekly_pay') && <PayCalc fields={fields} setFields={setFields} />}
-                  {defs.map((f) => (
-                    <label
-                      key={f.key}
-                      className={clsx('min-w-0', (f.key === 'job_title' || f.key === 'location' || f.key === 'benefits' || f.key === 'weekly_pay') && 'col-span-2')}
-                    >
-                      <span className="block text-[11px] font-semibold text-ink-3 mb-1 truncate">{f.label}</span>
-                      {f.kind === 'location' ? (
-                        <LocationInput
-                          value={fields[f.key] ?? ''}
-                          placeholder={f.example}
-                          onChange={(v) => set(f.key, v)}
-                          onCommit={(v) => set(f.key, formatLocation(v))}
-                        />
-                      ) : (
-                        <input
-                          className="input"
-                          value={fields[f.key] ?? ''}
-                          placeholder={f.example}
-                          onChange={(e) => set(f.key, e.target.value)}
-                          onBlur={() => tidy(f.key)}
-                        />
-                      )}
-                      {f.kind === 'location' && (
-                        <LocationHint
-                          match={match}
-                          pinned={pinned}
-                          onChange={() => setPhotoPicker(true)}
-                          onUnpin={() => set('location__photo', '')}
-                        />
-                      )}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            ))}
-            <LockedSummary defs={template.fieldDefs} />
+            <JobForm template={template} fields={fields} setFields={setFields} />
           </section>
           </div>
 
@@ -443,19 +533,7 @@ export function JobKit() {
           <section className="min-w-0 scroll-mt-20" ref={previewsRef}>
             <div className="flex flex-wrap items-center gap-1.5 mb-3">
               <span className="eyebrow mr-1">Sizes</span>
-              {Object.keys(template.layouts).map((s) => (
-                <button
-                  key={s}
-                  className={clsx('chip', sizes.includes(s) && 'chip-on')}
-                  onClick={() => setSizes((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]))}
-                  aria-pressed={sizes.includes(s)}
-                >
-                  {sizes.includes(s) && <Check size={12} />} {SIZES[s as keyof typeof SIZES]?.label ?? s}
-                </button>
-              ))}
-              <button className={clsx('chip', gif && 'chip-on')} onClick={() => setGif(!gif)} aria-pressed={gif}>
-                <Film size={12} /> Animated GIF
-              </button>
+              <SizeChips template={template} sizes={sizes} setSizes={setSizes} gif={gif} setGif={setGif} />
             </div>
             <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
               {sizes.filter((s) => designs[s]).map((s) => (
@@ -503,40 +581,167 @@ export function JobKit() {
       </div>
 
       {/* action bar: a footer under the scrolling area, so it stays at the bottom of the window and never covers the page */}
-      {mode === 'one' && (
-        <div className="shrink-0 px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
-          {busy && <span className="text-[12px] text-ink-3 truncate min-w-0">{busy}</span>}
-          <button className="btn h-10 px-4" onClick={() => void postLinkedIn()} disabled={!!busy || !sizes.length} title="Copies the image and opens LinkedIn with the caption filled in">
-            <Send size={15} /> <span className="hidden sm:inline">Post on</span> LinkedIn
+      <div className="shrink-0 px-4 md:px-6 py-3 bg-surface-0/85 backdrop-blur border-t border-line flex items-center gap-2 justify-end">
+        {busy && <span className="text-[12px] text-ink-3 truncate min-w-0">{busy}</span>}
+        {manyList ? (
+          <button
+            className="btn btn-primary h-10 px-4"
+            onClick={() => void downloadAll()}
+            disabled={!!busy || !sizes.length || !ready.length}
+            title={!ready.length ? 'Give at least one job a title' : 'A kit for every job, in one ZIP'}
+          >
+            <Layers size={16} /> Download {ready.length || ''} kit{ready.length === 1 ? '' : 's'}
+            <span className="opacity-80 font-normal tabular-nums">({ready.length * fileCount} files)</span>
           </button>
-          <button className="btn btn-primary h-10 px-4" onClick={() => void downloadKit()} disabled={!!busy || !sizes.length}>
-            <Download size={16} /> Download kit
-            <span className="opacity-80 font-normal tabular-nums">({sizes.length + (gif && sizes.includes('square') ? 1 : 0) + 1} files)</span>
-          </button>
-        </div>
-      )}
+        ) : (
+          <>
+            <button className="btn h-10 px-4" onClick={() => void postLinkedIn()} disabled={!!busy || !sizes.length} title="Copies the image and opens LinkedIn with the caption filled in">
+              <Send size={15} /> <span className="hidden sm:inline">Post on</span> LinkedIn
+            </button>
+            <button className="btn btn-primary h-10 px-4" onClick={() => void downloadKit()} disabled={!!busy || !sizes.length}>
+              <Download size={16} /> Download kit
+              <span className="opacity-80 font-normal tabular-nums">({fileCount} files)</span>
+            </button>
+          </>
+        )}
+      </div>
 
-      {hotOpen && (
+      {hot && (
         <HotJobPicker
-          onClose={() => setHotOpen(false)}
+          onClose={() => setHot(null)}
+          multi={hot.kind === 'many' ? slots : undefined}
+          onPickMany={
+            hot.kind === 'many'
+              ? (picks) => {
+                  const r = placeHotJobs(many, picks, template)
+                  setMany(r.jobs)
+                  if (r.last >= 0) setOpenIdx(r.last)
+                  setHot(null)
+                }
+              : undefined
+          }
           onPick={(f) => {
-            // start the pay clean: a hot job without a pay range (details missing on the post) must not keep the last
-            // job's pay or have the Work out pay strip refill it from old numbers (BJ, 2026-11-18)
-            // ...and the same for shift / duration: only what the post really has. The post's bill rate, vendor, zip, hours
-            // and weeks land in the Work out pay strip to double-check (BJ, 2026-11-18); `hot` marks the job as a hot job, so
-            // the strip asks for anything the post is missing instead of guessing.
-            const blankPay = Object.fromEntries([...Object.values(PAY_KEYS), 'weekly_pay', 'wage_low', 'wage_high', 'shift', 'duration'].map((k) => [k, '']))
-            setFields((cur) => ({ ...cur, ...blankPay, ...f, [PAY_KEYS.hot]: '1', location__photo: '' }))
-            setMode('one')
-            setHotOpen(false)
+            // same fill in both modes: the post's own numbers, pay started clean (`withHotJob`, BJ 2026-11-18)
+            if (hot.kind === 'fill' && hot.index !== null) {
+              const i = hot.index
+              setMany((list) => list.map((j, k) => (k === i ? withHotJob(j, f) : j)))
+            } else setFields((cur) => withHotJob(cur, f))
+            setHot(null)
           }}
         />
       )}
+    </div>
+  )
+}
 
+function SizeChips({
+  template,
+  sizes,
+  setSizes,
+  gif,
+  setGif,
+}: {
+  template: TemplateDef
+  sizes: string[]
+  setSizes: (fn: (v: string[]) => string[]) => void
+  gif: boolean
+  setGif: (v: boolean) => void
+}) {
+  return (
+    <>
+      {Object.keys(template.layouts).map((s) => (
+        <button
+          key={s}
+          className={clsx('chip', sizes.includes(s) && 'chip-on')}
+          onClick={() => setSizes((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]))}
+          aria-pressed={sizes.includes(s)}
+        >
+          {sizes.includes(s) && <Check size={12} />} {SIZES[s as keyof typeof SIZES]?.label ?? s}
+        </button>
+      ))}
+      <button className={clsx('chip', gif && 'chip-on')} onClick={() => setGif(!gif)} aria-pressed={gif}>
+        <Film size={12} /> Animated GIF
+      </button>
+    </>
+  )
+}
+
+/** The job form (Recent jobs, every editable field with the pay strip, the city photo), shared by One job and each
+ *  Many jobs job. */
+function JobForm({
+  template,
+  fields,
+  setFields,
+  showLocked = true,
+}: {
+  template: TemplateDef
+  fields: Record<string, string>
+  setFields: (u: SetStateAction<Record<string, string>>) => void
+  showLocked?: boolean
+}) {
+  const [photoPicker, setPhotoPicker] = useState(false)
+  const match = fields.location ? resolveLocation(fields.location) : null
+  const pinned = fields['location__photo'] ? cityIndex().find((c) => c.id === fields['location__photo']) : undefined
+  // one of the person's uploads used as the post's photo (BJ, 2026-11-19): its link is pinned instead of a city id
+  const pinnedUpload = isPhotoLink(fields['location__photo']) ? fields['location__photo'] : undefined
+  const set = (k: string, v: string) => setFields((f) => ({ ...f, [k]: v }))
+  const tidy = (k: string) => setFields((f) => ({ ...f, [k]: tidyField(k, f[k] ?? '') }))
+  const groups = useMemo(() => {
+    const g = new Map<string, FieldDef[]>()
+    // template-locked fields (job type, benefits, footer) aren't editable here
+    for (const f of template.fieldDefs.filter((x) => !x.locked)) g.set(f.group ?? 'Details', [...(g.get(f.group ?? 'Details') ?? []), f])
+    return [...g.entries()]
+  }, [template])
+  return (
+    <>
+      <RecentJobs onPick={(f) => setFields({ ...f })} />
+      {groups.map(([g, defs]) => (
+        <fieldset key={g} className="mb-3">
+          <legend className="text-[11px] font-bold text-ink-2 mb-1.5">{g}</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {/* the hub's pay calculator, above the pay fields it fills (hidden without the hub) */}
+            {defs.some((f) => f.key === 'weekly_pay') && <PayCalc fields={fields} setFields={setFields} />}
+            {defs.map((f) => (
+              <label
+                key={f.key}
+                className={clsx('min-w-0', (f.key === 'job_title' || f.key === 'location' || f.key === 'benefits' || f.key === 'weekly_pay') && 'col-span-2')}
+              >
+                <span className="block text-[11px] font-semibold text-ink-3 mb-1 truncate">{f.label}</span>
+                {f.kind === 'location' ? (
+                  <LocationInput
+                    value={fields[f.key] ?? ''}
+                    placeholder={f.example}
+                    onChange={(v) => set(f.key, v)}
+                    onCommit={(v) => set(f.key, formatLocation(v))}
+                  />
+                ) : (
+                  <input
+                    className="input"
+                    value={fields[f.key] ?? ''}
+                    placeholder={f.example}
+                    onChange={(e) => set(f.key, e.target.value)}
+                    onBlur={() => tidy(f.key)}
+                  />
+                )}
+                {f.kind === 'location' && (
+                  <LocationHint
+                    match={match}
+                    pinned={pinned}
+                    upload={pinnedUpload}
+                    onChange={() => setPhotoPicker(true)}
+                    onUnpin={() => set('location__photo', '')}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      {showLocked && <LockedSummary defs={template.fieldDefs} />}
       {photoPicker && (
         <PhotoPicker
           location={fields.location ?? ''}
-          current={pinned?.id ?? match?.photo.id}
+          current={pinnedUpload ?? pinned?.id ?? match?.photo.id}
           onPick={(id) => {
             set('location__photo', id)
             setPhotoPicker(false)
@@ -544,7 +749,7 @@ export function JobKit() {
           onClose={() => setPhotoPicker(false)}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -727,14 +932,32 @@ function PreviewCard({
 function LocationHint({
   match,
   pinned,
+  upload,
   onChange,
   onUnpin,
 }: {
   match: ReturnType<typeof resolveLocation>
   pinned?: CityPhoto
+  /** link of the person's own photo, when they picked one of their uploads */
+  upload?: string
   onChange: () => void
   onUnpin: () => void
 }) {
+  if (upload)
+    return (
+      <span className="flex items-center gap-2 mt-1.5 min-w-0">
+        <img src={upload} alt="" className="w-10 h-7 rounded object-cover shrink-0" />
+        <span className="text-[11.5px] text-ink-2 truncate min-w-0">
+          Your photo <span className="text-ink-3">· from your uploads</span>
+        </span>
+        <button type="button" className="text-[11.5px] font-semibold text-accent whitespace-nowrap" onClick={onChange}>
+          Change
+        </button>
+        <button type="button" className="text-ink-3" onClick={onUnpin} aria-label="Use the city photo">
+          <X size={12} />
+        </button>
+      </span>
+    )
   const index = cityIndex()
   if (!index.length)
     return <span className="block mt-1 text-[11px] text-ink-3">City photos are still being added — a placeholder is used for now.</span>
@@ -777,6 +1000,8 @@ function PhotoPicker({
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
+  // City photos or the person's own uploads (BJ, 2026-11-19)
+  const [tab, setTab] = useState<'city' | 'uploads'>(isPhotoLink(current) ? 'uploads' : 'city')
   const near = nearbyCities(location, 12)
   const list = q.trim() ? searchCities(q, 60) : near
   useEffect(() => {
@@ -785,22 +1010,38 @@ function PhotoPicker({
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return createPortal(
+    // studio-root: Studio's button / input sizing reaches this pop-up on <body> too
+    <div className="studio-root contents">
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6" onMouseDown={onClose}>
       <div
         className="card w-full sm:w-[760px] max-h-[92vh] flex flex-col bg-surface-1"
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Choose a city photo"
+        aria-label="Choose the post's photo"
       >
         <div className="flex items-center gap-2 p-4 border-b border-line">
           <div className="min-w-0 flex-1">
-            <div className="eyebrow">City photo</div>
-            <div className="text-[15px] font-extrabold truncate">Photos near {location || 'this job'}</div>
+            <div className="eyebrow">Post photo</div>
+            <div className="text-[15px] font-extrabold truncate">{tab === 'city' ? `Photos near ${location || 'this job'}` : 'Your uploads'}</div>
           </div>
           <button className="btn" onClick={onClose} aria-label="Close">
             <X size={15} />
           </button>
         </div>
+        <div className="px-4 pt-3">
+          <Seg
+            value={tab}
+            onChange={(v) => setTab(v === 'uploads' ? 'uploads' : 'city')}
+            options={[
+              { value: 'city', label: 'City photos' },
+              { value: 'uploads', label: 'Your uploads' },
+            ]}
+          />
+        </div>
+        {tab === 'uploads' ? (
+          <UploadsPick current={current} onPick={onPick} />
+        ) : (
+        <>
         <div className="p-4 pb-2">
           <input className="input" autoFocus placeholder="Search any city or state…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
@@ -820,123 +1061,289 @@ function PhotoPicker({
           ))}
           {!list.length && <div className="col-span-full text-sm text-ink-3 py-8 text-center">No photos found.</div>}
         </div>
+        </>
+        )}
       </div>
+    </div>
     </div>,
     document.body,
   )
 }
 
+// ── many jobs ───────────────────────────────────────────────
 
-// ── batch ───────────────────────────────────────────────────
+/** the job's number, in a small accent circle */
+function JobNum({ n }: { n: number }) {
+  return (
+    <span className="shrink-0 w-6 h-6 rounded-full bg-accent/[0.12] text-accent text-[11.5px] font-extrabold tabular-nums flex items-center justify-center">
+      {n}
+    </span>
+  )
+}
 
-function BatchMode({
+/** a post as wide as its box (up to `max`), so a small tile never lets it spill into the next one */
+function FitCanvas({ design, max }: { design: Design; max: number }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    const el = box.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <div ref={box} className="w-full">
+      {w > 0 && <DesignCanvas design={design} width={Math.min(w, max)} className="rounded-lg mx-auto" />}
+    </div>
+  )
+}
+
+/** "CT Tech · Boise, ID · $2,410 – $2,655" without the parts that are blank */
+const jobLine = (j: Record<string, string>) => [j.location, j.weekly_pay].map((x) => x?.trim()).filter(Boolean).join(' · ')
+
+/** Many jobs (BJ, 2026-11-19): the job form repeated for up to five jobs. One job is open at a time; the others are a
+ *  one-line bar. Beside them, the live "Hot Jobs This Week" roundup post, and a small post per job that opens it. */
+function ManyJobs({
   template,
+  jobs,
+  setJobs,
+  openIdx,
+  setOpenIdx,
+  onOpenJob,
+  onHot,
   sizes,
+  setSizes,
   gif,
-  onPick,
+  setGif,
+  canEdit,
+  busy,
+  setBusy,
 }: {
   template: TemplateDef
+  jobs: Record<string, string>[]
+  setJobs: (u: SetStateAction<Record<string, string>[]>) => void
+  openIdx: number
+  setOpenIdx: (i: number) => void
+  /** open one job in the full one-job view */
+  onOpenJob: (i: number) => void
+  /** fill job i from Hot Jobs */
+  onHot: (i: number) => void
   sizes: string[]
+  setSizes: (fn: (v: string[]) => string[]) => void
   gif: boolean
-  onPick: (fields: Record<string, string>) => void
+  setGif: (v: boolean) => void
+  canEdit: boolean
+  busy: string | null
+  setBusy: (v: string | null) => void
 }) {
   const toast = useToast()
-  const [raw, setRaw] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
-  const canEdit = useAuth().can('studio') === 'edit' // the roundup opens as a saved design: Edit only
-  const parsed = useMemo(() => parseJobs(raw, template.fieldDefs), [raw, template])
-  const base = Object.fromEntries(template.fieldDefs.map((f) => [f.key, f.example]))
-  const jobs = parsed.jobs.map((j) => {
-    const out: Record<string, string> = { ...base, ...j }
-    for (const k of Object.keys(j)) out[k] = tidyField(k, out[k])
-    if (out.location) out.location = formatLocation(out.location)
-    return out
-  })
-
   const nav = useNavigate()
-  /** one "Hot jobs this week" post from the first five rows */
-  const roundup = async () => {
-    const rt = roundupTemplates(useTemplateLibSnapshot())[0] ?? HOT_JOBS_ROUNDUP
-    const d = instantiate(rt, rt.defaultSize, roundupFields(jobs), {
-      name: `Hot jobs roundup — ${jobs.length > 5 ? 'first 5 of ' : ''}${jobs.length} job${jobs.length === 1 ? '' : 's'}`,
-    })
-    await repo.saveDesign(d)
-    if (jobs.length > 5) toast('Roundup uses the first five jobs', 'Edit the rows in the Fields panel to swap any.')
-    nav(`/studio/design/${d.id}`)
+  const { templates } = useTemplates()
+  const rt = roundupTemplates(templates)[0] ?? HOT_JOBS_ROUNDUP
+  const [rSize, setRSize] = useState(rt.defaultSize)
+  const size = rt.layouts[rSize] ? rSize : rt.defaultSize
+  const ready = jobs.filter(isReadyJob)
+  const roundup = useMemo(() => {
+    const d = instantiate(rt, size, roundupFields(ready), { name: `Hot jobs roundup — ${ready.length} job${ready.length === 1 ? '' : 's'}` })
+    // the post's rows close up over blank jobs (row 3 can be Job 5): its warnings use the form's job numbers
+    // ("Job 5 weekly pay is empty"), the same as the bars, the small previews and the ZIP folders
+    const num = jobs.flatMap((j, i) => (isReadyJob(j) ? [i + 1] : []))
+    return { ...d, fieldDefs: d.fieldDefs?.map((f) => ({ ...f, label: f.label.replace(/^Job (\d+)\b/, (m, r) => (num[Number(r) - 1] ? `Job ${num[Number(r) - 1]}` : m)) })) }
+  }, [rt, size, jobs]) // eslint-disable-line react-hooks/exhaustive-deps
+  const thumbs = useMemo(() => jobs.map((j) => (isReadyJob(j) ? instantiate(template, 'square', j) : null)), [jobs, template])
+
+  const setJob = (i: number) => (u: SetStateAction<Record<string, string>>) =>
+    setJobs((list) => list.map((j, k) => (k === i ? (typeof u === 'function' ? u(j) : u) : j)))
+  const add = () => {
+    if (jobs.length >= MAX_JOBS) return
+    setJobs((list) => [...list, blankJob(template)])
+    setOpenIdx(jobs.length)
+  }
+  const remove = (i: number) => {
+    const before = jobs
+    const was = openIdx
+    const next = jobs.filter((_, k) => k !== i)
+    setJobs(next.length ? next : [blankJob(template)])
+    setOpenIdx(!next.length ? 0 : i === was ? -1 : i < was ? was - 1 : was)
+    if (!isBlankJob(jobs[i], template))
+      toast(`Job ${i + 1} removed`, jobs[i].job_title || undefined, 'ok', {
+        label: 'Undo',
+        run: () => {
+          setJobs(before)
+          setOpenIdx(was)
+        },
+      })
   }
 
-  const run = async () => {
-    setBusy('Starting…')
+  const downloadRoundup = async (kind: 'png' | 'gif') => {
+    if (busy) return
+    setBusy(kind === 'gif' ? 'Making GIF…' : 'Rendering…')
     try {
-      const all: { name: string; data: Blob | Uint8Array }[] = []
-      for (let i = 0; i < jobs.length; i++) {
-        const j = jobs[i]
-        const folder = `${String(i + 1).padStart(2, '0')}-${slug(`${j.job_title}-${j.location}`)}/`
-        const files = await buildKitFiles(template, j, sizes, gif, folder, (m) => setBusy(`Job ${i + 1} of ${jobs.length}: ${m}…`))
-        all.push(...files)
-      }
-      const { makeZip } = await import('../export/zip')
-      const { downloadBlob } = await import('../export/raster')
-      downloadBlob(await makeZip(all), `job-posts-${jobs.length}.zip`)
-      toast(`${jobs.length} kits downloaded`)
+      await downloadDesign(roundup, `hot-jobs-this-week-${size}`, kind)
     } catch (e) {
-      toast('Batch failed', e instanceof Error ? e.message : undefined, 'error')
+      toast('Download failed', e instanceof Error ? e.message : undefined, 'error')
     } finally {
       setBusy(null)
     }
   }
+  const copyRoundup = async () => {
+    try {
+      await copyPngPromiseToClipboard(pngOf(roundup))
+      toast('Image copied', 'Paste it straight into LinkedIn, Facebook or Teams.')
+    } catch (e) {
+      toast('Copy failed', e instanceof Error ? e.message : undefined, 'error')
+    }
+  }
+  /** Edit access: save the roundup as a design and open it in the editor */
+  const opening = useRef(false)
+  const editRoundup = async () => {
+    if (opening.current) return
+    opening.current = true
+    try {
+      const d = instantiate(rt, size, roundupFields(ready), { name: roundup.name })
+      await repo.saveDesign(d, await designThumb(d))
+      nav(`/studio/design/${d.id}`)
+    } catch (e) {
+      toast('Couldn’t open the editor', e instanceof Error ? e.message : undefined, 'error')
+    } finally {
+      opening.current = false
+    }
+  }
+  /** View access: open it full size, read-only, without saving */
+  const openRoundup = () => {
+    const d = instantiate(rt, size, roundupFields(ready), { name: roundup.name })
+    stashPreview(d)
+    nav(`/studio/design/${d.id}`)
+  }
 
   return (
-    <div className="grid gap-4 px-4 md:px-6 pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-      <section className="card card-accent p-4 min-w-0">
-        <div className="eyebrow mb-1">Paste jobs</div>
-        <p className="text-[12.5px] text-ink-2 mb-2">
-          Copy rows from Excel or Google Sheets <b>including the header row</b> and paste below. Columns are matched
-          automatically (Title, City, Weekly pay, Shift…). Anything missing uses the template’s example.
-        </p>
-        <textarea
-          className="input h-64 py-2 font-mono text-[12px] leading-relaxed resize-y"
-          placeholder={'Job Title\tLocation\tWeekly Pay\tShift\tDuration\nPharmacist\tFishersville, VA\t3227-3547\t5x8 days\t13\nCT Tech\tBoise, ID\t2400-2650\t3x12 nights\t13'}
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-        />
-        {parsed.headers.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {parsed.headers.map((h, i) => (
-              <span key={i} className={clsx('chip', parsed.mapping[i] ? 'chip-on' : 'opacity-60 line-through')}>
-                {h || '(blank)'} {parsed.mapping[i] && <>→ {template.fieldDefs.find((f) => f.key === parsed.mapping[i])?.label}</>}
-              </span>
-            ))}
-          </div>
+    <div className="grid gap-4 px-4 md:px-6 pb-6 min-h-0 lg:grid-cols-[minmax(340px,440px)_minmax(0,1fr)]">
+      {/* ── the jobs ── */}
+      <section className="min-w-0 flex flex-col gap-2.5 self-start">
+        {jobs.map((j, i) =>
+          i === openIdx ? (
+            <div key={i} className="card card-accent p-4 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <JobNum n={i + 1} />
+                {/* the number badge already says which job: the label goes on a phone so the buttons stay on one line */}
+                <div className="eyebrow flex-1 min-w-0 truncate max-sm:invisible max-sm:w-0">Job {i + 1}</div>
+                <button className="btn h-8 px-2.5" onClick={() => onHot(i)} aria-label={`Fill job ${i + 1} from Hot Jobs`}>
+                  <Briefcase size={14} /> <span><span className="max-sm:hidden">From </span>Hot Jobs</span>
+                </button>
+                <button
+                  className="text-[11.5px] font-semibold text-ink-3 hover:text-accent whitespace-nowrap px-1"
+                  onClick={() => setJob(i)(blankJob(template))}
+                >
+                  Clear
+                </button>
+                {jobs.length > 1 && (
+                  <button className="btn h-8 w-8 px-0" onClick={() => remove(i)} aria-label={`Remove job ${i + 1}`} title="Remove this job">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                <button className="btn h-8 w-8 px-0" onClick={() => setOpenIdx(-1)} aria-label={`Collapse job ${i + 1}`} title="Collapse">
+                  <ChevronUp size={15} />
+                </button>
+              </div>
+              <JobForm template={template} fields={j} setFields={setJob(i)} showLocked={false} />
+            </div>
+          ) : (
+            <div key={i} className="card flex items-center gap-1.5 p-1.5 min-w-0">
+              <button
+                className="flex-1 min-w-0 flex items-center gap-2.5 text-left px-1.5 py-1 rounded-lg hover:bg-surface-2"
+                onClick={() => setOpenIdx(i)}
+                aria-expanded={false}
+                title={[j.job_title, jobLine(j)].filter(Boolean).join(' · ') || 'Not filled in yet'}
+              >
+                <JobNum n={i + 1} />
+                <span className="min-w-0 flex-1 truncate text-[13px]">
+                  <b className={clsx(!j.job_title?.trim() && 'text-ink-3 font-semibold')}>{j.job_title?.trim() || 'Not filled in yet'}</b>
+                  {jobLine(j) && <span className="text-ink-3"> · {jobLine(j)}</span>}
+                </span>
+                <ChevronDown size={15} className="shrink-0 text-ink-3" />
+              </button>
+              <button className="btn h-8 w-8 px-0 shrink-0" onClick={() => remove(i)} aria-label={`Remove job ${i + 1}`} title="Remove this job">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ),
         )}
+        <button
+          className="btn h-10 w-full border-dashed"
+          onClick={add}
+          disabled={jobs.length >= MAX_JOBS}
+          title={jobs.length >= MAX_JOBS ? 'The roundup post fits five jobs' : undefined}
+        >
+          {jobs.length >= MAX_JOBS ? (
+            <>{MAX_JOBS} jobs is the most</>
+          ) : (
+            <>
+              <Plus size={15} /> Add another job <span className="text-ink-3 font-normal tabular-nums">({jobs.length} of {MAX_JOBS})</span>
+            </>
+          )}
+        </button>
+        <LockedSummary defs={template.fieldDefs} />
       </section>
-      <section className="min-w-0">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="eyebrow">{jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'} ready` : 'Preview'}</div>
-          <div className="flex-1" />
-          {busy && <span className="text-[12px] text-ink-3 truncate">{busy}</span>}
-          {canEdit && <button className="btn" disabled={!jobs.length || !!busy} onClick={() => void roundup()} title="One post listing up to five of these jobs">
-            <ListChecks size={15} /> Roundup post
-          </button>}
-          <button className="btn btn-primary" disabled={!jobs.length || !!busy || !sizes.length} onClick={() => void run()}>
-            <Layers size={15} /> Make {jobs.length || ''} kits
-          </button>
-        </div>
-        {!jobs.length ? (
-          <div className="card p-8 text-center">
-            <Sparkles className="mx-auto text-accent mb-2" size={22} />
-            <div className="font-bold text-[14px]">One paste, every post</div>
-            <div className="text-[12.5px] text-ink-3 mt-1">Each row becomes a full kit — all sizes, GIF and caption — in one ZIP.</div>
-          </div>
-        ) : (
-          <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr))]">
-            {jobs.map((j, i) => (
-              <button key={i} className="card p-2 text-left min-w-0 hover:ring-2 hover:ring-accent/40 transition" onClick={() => onPick(j)}>
-                <DesignCanvas design={instantiate(template, 'square', j)} width={200} className="rounded-lg w-full !h-auto" />
-                <div className="text-[12.5px] font-bold mt-1.5 truncate">{j.job_title}</div>
-                <div className="text-[11.5px] text-ink-3 truncate">{j.location}</div>
+
+      {/* ── the roundup post, then a small post per job ── */}
+      <section className="min-w-0 flex flex-col gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+            <span className="eyebrow mr-1 flex items-center gap-1">
+              <ListChecks size={12} /> Roundup post
+            </span>
+            {Object.keys(rt.layouts).map((s) => (
+              <button key={s} className={clsx('chip', size === s && 'chip-on')} onClick={() => setRSize(s)} aria-pressed={size === s}>
+                {size === s && <Check size={12} />} {SIZES[s as keyof typeof SIZES]?.label ?? s}
               </button>
             ))}
+          </div>
+          {ready.length ? (
+            <PreviewCard
+              design={roundup}
+              label="Hot Jobs This Week"
+              hint={`${ready.length} job${ready.length === 1 ? '' : 's'}`}
+              onCopy={() => void copyRoundup()}
+              onPng={() => void downloadRoundup('png')}
+              onGif={() => void downloadRoundup('gif')}
+              onEdit={canEdit ? () => void editRoundup() : undefined}
+              onOpen={canEdit ? undefined : openRoundup}
+            />
+          ) : (
+            <div className="card p-8 text-center">
+              <Sparkles className="mx-auto text-accent mb-2" size={22} />
+              <div className="font-bold text-[14px]">Your Hot Jobs This Week post</div>
+              <div className="text-[12.5px] text-ink-3 mt-1">Give a job a title (or pick from Hot Jobs) and it shows up here, one row per job.</div>
+            </div>
+          )}
+        </div>
+
+        {ready.length > 0 && (
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              <span className="eyebrow mr-1">Each job’s kit</span>
+              <SizeChips template={template} sizes={sizes} setSizes={setSizes} gif={gif} setGif={setGif} />
+            </div>
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr))]">
+              {jobs.map((j, i) =>
+                thumbs[i] ? (
+                  <button
+                    key={i}
+                    className="card p-2 text-left min-w-0 hover:ring-2 hover:ring-accent/40 transition"
+                    onClick={() => onOpenJob(i)}
+                    title={`Open job ${i + 1}: every size and the caption`}
+                  >
+                    <FitCanvas design={thumbs[i]!} max={240} />
+                    <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
+                      <JobNum n={i + 1} />
+                      <span className="text-[12.5px] font-bold truncate" title={j.job_title}>{j.job_title}</span>
+                    </div>
+                    {jobLine(j) && <div className="text-[11.5px] text-ink-3 truncate mt-0.5" title={jobLine(j)}>{jobLine(j)}</div>}
+                  </button>
+                ) : null,
+              )}
+            </div>
           </div>
         )}
       </section>

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { EyeOff, FileWarning, GripVertical, Pencil, PencilLine, Check } from 'lucide-react'
 import clsx from 'clsx'
-import { type PageItem, displaySize, hasRedaction } from './lib'
+import { type PageItem, type PageLayout, LETTER, displaySize, hasRedaction } from './lib'
 import { getThumb, peekThumb, thumbKey } from './raster'
 import { type SourceMeta, usePdfStudio } from './store'
 
@@ -38,13 +38,14 @@ interface CardProps {
   selected: boolean
   dragging: boolean
   drop: 'before' | 'after' | null
+  layout: PageLayout
   onPointerDown: (e: React.PointerEvent, id: string) => void
   onClickCard: (e: React.MouseEvent | React.KeyboardEvent, id: string) => void
   onToggle: (id: string) => void
   onOpen: (id: string) => void
 }
 
-const Card = memo(function Card({ page, number, source, selected, dragging, drop, onPointerDown, onClickCard, onToggle, onOpen }: CardProps) {
+const Card = memo(function Card({ page, number, source, selected, dragging, drop, layout, onPointerDown, onClickCard, onToggle, onOpen }: CardProps) {
   const [ref, seen] = useInView<HTMLDivElement>()
   const key = thumbKey(page)
   const [thumb, setThumb] = useState<string | null>(null)
@@ -83,7 +84,13 @@ const Card = memo(function Card({ page, number, source, selected, dragging, drop
       )}
       onPointerDown={(e) => onPointerDown(e, page.id)}
       onClick={(e) => onClickCard(e, page.id)}
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest('button')) return
+        onOpen(page.id)
+      }}
       onKeyDown={(e) => {
+        // keys on the checkbox / edit button belong to those buttons
+        if (e.target !== e.currentTarget) return
         if (e.key === 'Enter') {
           e.preventDefault()
           onOpen(page.id)
@@ -100,7 +107,25 @@ const Card = memo(function Card({ page, number, source, selected, dragging, drop
         />
       )}
       <div className="relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg bg-surface-2">
-        {page.src.kind === 'blank' ? (
+        {layout === 'letter' ? (
+          // the packet's sheet: a white portrait Letter page with the content fitted on it, as it will be exported
+          <div
+            className="flex h-[92%] items-center justify-center overflow-hidden bg-white shadow ring-1 ring-black/10"
+            style={{ aspectRatio: `${LETTER.w}/${LETTER.h}` }}
+            title="Letter portrait page"
+          >
+            {page.src.kind === 'blank' && !(key && thumb) ? null : thumb ? (
+              <img src={thumb} alt={`Page ${number} preview`} draggable={false} className="max-h-full max-w-full object-contain" />
+            ) : failed || (source && !source.renderable) ? (
+              <div className="flex flex-col items-center gap-1 px-2 text-center text-[11px] text-neutral-500">
+                <FileWarning size={20} />
+                No preview
+              </div>
+            ) : (
+              <div className="h-full w-full animate-pulse bg-neutral-200/70" aria-hidden />
+            )}
+          </div>
+        ) : page.src.kind === 'blank' && !(key && thumb) ? (
           <div className="max-h-[92%] max-w-[92%] bg-white shadow ring-1 ring-black/10" style={{ aspectRatio: `${d.w}/${d.h}`, height: d.h >= d.w ? '92%' : undefined, width: d.w > d.h ? '92%' : undefined }} />
         ) : thumb ? (
           <img src={thumb} alt={`Page ${number} preview`} draggable={false} className="max-h-full max-w-full bg-white object-contain shadow ring-1 ring-black/10" />
@@ -187,6 +212,7 @@ export function PageGrid({ onOpen }: Props) {
   const click = usePdfStudio((s) => s.click)
   const reorder = usePdfStudio((s) => s.reorder)
   const setSel = usePdfStudio((s) => s.setSel)
+  const layout = usePdfStudio((s) => s.layout)
 
   const gridRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<{ ids: string[]; x: number; y: number; target: number | null } | null>(null)
@@ -197,6 +223,10 @@ export function PageGrid({ onOpen }: Props) {
   const targetAt = useCallback((cx: number, cy: number): number | null => {
     const root = gridRef.current
     if (!root) return null
+    // released away from the pages (side panel, header): no move
+    const box = root.getBoundingClientRect()
+    const M = 48
+    if (cx < box.left - M || cx > box.right + M || cy < box.top - M || cy > box.bottom + M) return null
     const cards = Array.from(root.querySelectorAll<HTMLElement>('[data-page-id]'))
     if (!cards.length) return null
     let best = -1
@@ -249,6 +279,25 @@ export function PageGrid({ onOpen }: Props) {
         raf = requestAnimationFrame(tick)
       }
 
+      const stop = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        window.removeEventListener('pointercancel', up)
+        window.removeEventListener('keydown', key, true)
+        cancelAnimationFrame(raf)
+        document.body.style.userSelect = ''
+      }
+      // Esc cancels a drag (and doesn't also clear the selection)
+      const key = (ev: KeyboardEvent) => {
+        if (ev.key !== 'Escape' || !active) return
+        ev.preventDefault()
+        ev.stopImmediatePropagation()
+        stop()
+        suppressClick.current = true
+        setTimeout(() => (suppressClick.current = false), 0)
+        setDrag(null)
+      }
+
       const move = (ev: PointerEvent) => {
         lastY = ev.clientY
         if (!active) {
@@ -263,11 +312,7 @@ export function PageGrid({ onOpen }: Props) {
         setDrag({ ids, x: ev.clientX, y: ev.clientY, target: targetAt(ev.clientX, ev.clientY) })
       }
       const up = (ev: PointerEvent) => {
-        window.removeEventListener('pointermove', move)
-        window.removeEventListener('pointerup', up)
-        window.removeEventListener('pointercancel', up)
-        cancelAnimationFrame(raf)
-        document.body.style.userSelect = ''
+        stop()
         if (active) {
           suppressClick.current = true
           setTimeout(() => (suppressClick.current = false), 0)
@@ -281,6 +326,7 @@ export function PageGrid({ onOpen }: Props) {
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', up)
       window.addEventListener('pointercancel', up)
+      window.addEventListener('keydown', key, true)
     },
     [reorder, setSel, targetAt],
   )
@@ -316,6 +362,7 @@ export function PageGrid({ onOpen }: Props) {
             selected={selSet.has(p.id)}
             dragging={dragSet.has(p.id)}
             drop={drag && drag.target !== null ? (drag.target === i ? 'before' : drag.target === n && i === n - 1 ? 'after' : null) : null}
+            layout={layout}
             onPointerDown={onPointerDown}
             onClickCard={onClickCard}
             onToggle={onToggle}
@@ -332,11 +379,15 @@ export function PageGrid({ onOpen }: Props) {
       {drag &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[120] flex h-10 items-center gap-2 rounded-lg border border-accent bg-surface-1 px-3 text-xs font-bold text-accent shadow-lg"
+            className={clsx(
+              'pointer-events-none fixed z-[120] flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border bg-surface-1 px-3 text-xs font-bold shadow-lg',
+              drag.target === null ? 'border-line text-ink-3' : 'border-accent text-accent',
+            )}
             style={{ left: drag.x + 12, top: drag.y + 12 }}
           >
             <GripVertical size={14} />
             {drag.ids.length} {drag.ids.length === 1 ? 'page' : 'pages'}
+            {drag.target === null && <span className="font-medium">· release to cancel</span>}
           </div>,
           document.body,
         )}

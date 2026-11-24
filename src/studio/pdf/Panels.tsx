@@ -1,7 +1,11 @@
 import { type ReactNode, useMemo, useState } from 'react'
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   EyeOff,
+  RefreshCcw,
+  RotateCcwSquare,
   FileImage,
   FileText,
   Scissors,
@@ -10,58 +14,90 @@ import {
   Files,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { estimateBytes, formatBytes, hasRedaction } from './lib'
-import { type FormField, usePdfStudio } from './store'
+import { estimateBytes, formatBytes, hasRedaction, widePageIds } from './lib'
+import { type FormField, type SourceMeta, usePdfStudio, usedSourceIds } from './store'
 import type { useExporter } from './useExporter'
 
 type Exporter = ReturnType<typeof useExporter>
 
-function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
+function Section({ title, icon, action, children }: { title: string; icon?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="card min-w-0 p-4">
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex min-w-0 items-center gap-2">
         {icon}
-        <h3 className="eyebrow">{title}</h3>
+        <h3 className="eyebrow min-w-0 flex-1">{title}</h3>
+        {action}
       </div>
       {children}
     </section>
   )
 }
 
+const iconBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-3 hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-30'
+
 export function DocumentPanel() {
   const pages = usePdfStudio((s) => s.pages)
   const sources = usePdfStudio((s) => s.sources)
-  const compress = usePdfStudio((s) => s.compress)
-  const setCompress = usePdfStudio((s) => s.setCompress)
+  const sel = usePdfStudio((s) => s.sel)
+  const layout = usePdfStudio((s) => s.layout)
+  const setLayout = usePdfStudio((s) => s.setLayout)
+  const [confirmReset, setConfirmReset] = useState(false)
 
   const estimate = useMemo(
     () =>
       estimateBytes(
         pages,
         Object.fromEntries(Object.values(sources).map((s) => [s.id, { bytes: s.bytes, pageCount: s.pageCount, kind: s.kind }])),
-        compress.on ? { quality: compress.quality } : null,
       ),
-    [pages, sources, compress],
+    [pages, sources],
   )
   const usage = useMemo(() => {
     const m = new Map<string, number>()
     for (const p of pages) if (p.src.kind !== 'blank') m.set(p.src.sourceId, (m.get(p.src.sourceId) ?? 0) + 1)
     return m
   }, [pages])
+  // only files that still have a page here, in document order (a removed file comes back with Undo)
+  const list = useMemo(() => usedSourceIds(pages).map((id) => sources[id]).filter((s): s is SourceMeta => !!s), [pages, sources])
+  const wide = useMemo(() => widePageIds(pages).length, [pages])
   const redacted = pages.filter(hasRedaction).length
-  const list = Object.values(sources)
-
-  const removeSource = (id: string) => {
-    const st = usePdfStudio.getState()
-    const ids = st.pages.filter((p) => p.src.kind !== 'blank' && p.src.sourceId === id).map((p) => p.id)
-    if (!ids.length) return
-    // undoable: pages are removed through the history-aware delete
-    usePdfStudio.setState({ sel: { ids, anchor: ids[0] } })
-    st.deleteSel()
-  }
+  const selSet = new Set(sel.ids)
+  const st = usePdfStudio.getState
+  const anything = pages.length > 0 || Object.keys(sources).length > 0
 
   return (
-    <Section title="Document" icon={<Files size={14} className="text-ink-3" />}>
+    <Section
+      title="Document"
+      icon={<Files size={14} className="text-ink-3" />}
+      action={
+        anything && !confirmReset ? (
+          <button type="button" className="btn !h-7 !px-2 !text-xs" title="Remove every page and file and start a new document" onClick={() => setConfirmReset(true)}>
+            <RefreshCcw size={13} /> Start over
+          </button>
+        ) : undefined
+      }
+    >
+      {confirmReset && (
+        <div className="mb-3 rounded-lg border border-[rgb(var(--status-bad)/.4)] bg-[rgb(var(--status-bad)/.08)] p-3 text-sm" role="alertdialog" aria-label="Start over">
+          <p className="font-semibold text-ink">Remove every page and file?</p>
+          <p className="mt-0.5 text-xs text-ink-2">This clears the document, your edits and the form values. It can&apos;t be undone.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn border-transparent bg-[rgb(var(--status-bad))] text-white hover:border-transparent hover:bg-[rgb(var(--status-bad)/.88)]"
+              onClick={() => {
+                st().reset()
+                setConfirmReset(false)
+              }}
+            >
+              <Trash2 size={14} /> Start over
+            </button>
+            <button type="button" className="btn" autoFocus onClick={() => setConfirmReset(false)}>
+              Keep working
+            </button>
+          </div>
+        </div>
+      )}
+
       <dl className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-surface-2 p-2">
           <dt className="eyebrow">Pages</dt>
@@ -80,28 +116,44 @@ export function DocumentPanel() {
       </dl>
 
       {list.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {list.map((s) => (
-            <li key={s.id} className="flex min-w-0 items-center gap-2 text-xs">
-              {s.kind === 'pdf' ? <FileText size={14} className="shrink-0 text-ink-3" /> : <FileImage size={14} className="shrink-0 text-ink-3" />}
-              <span className="min-w-0 flex-1 truncate font-medium text-ink" title={s.name}>
-                {s.name}
-              </span>
-              <span className="shrink-0 tabular-nums text-ink-3">
-                {usage.get(s.id) ?? 0}/{s.pageCount}
-              </span>
-              <button
-                type="button"
-                className="shrink-0 rounded p-1 text-ink-3 hover:text-ink disabled:opacity-40"
-                aria-label={`Remove ${s.name} pages`}
-                title="Remove this file's pages"
-                disabled={!usage.get(s.id)}
-                onClick={() => removeSource(s.id)}
-              >
-                <Trash2 size={13} />
-              </button>
-            </li>
-          ))}
+        <ul className="mt-3 space-y-1" aria-label="Files in this document">
+          {list.map((s, i) => {
+            const n = usage.get(s.id) ?? 0
+            const ids = pages.filter((p) => p.src.kind !== 'blank' && p.src.sourceId === s.id)
+            const allSel = ids.length > 0 && ids.every((p) => selSet.has(p.id))
+            return (
+              <li key={s.id} className={clsx('flex min-w-0 items-center gap-1 rounded-md pl-1 text-xs', allSel && 'bg-[rgb(var(--accent-soft))]')}>
+                {s.kind === 'pdf' ? <FileText size={14} className="shrink-0 text-ink-3" /> : <FileImage size={14} className="shrink-0 text-ink-3" />}
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate py-1 pl-1 text-left font-medium text-ink hover:underline"
+                  title={`${s.name}: select its ${n === 1 ? 'page' : `${n} pages`}`}
+                  onClick={() => st().selectSource(s.id)}
+                >
+                  {s.name}
+                </button>
+                <span className="shrink-0 pr-1 tabular-nums text-ink-3" title={`${n} of its ${s.pageCount} ${s.pageCount === 1 ? 'page' : 'pages'} in the document`}>
+                  {n}/{s.pageCount}
+                </span>
+                <button type="button" className={iconBtn} aria-label={`Move ${s.name} up`} title="Move this file's pages up" disabled={i === 0} onClick={() => st().moveSource(s.id, -1)}>
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  className={iconBtn}
+                  aria-label={`Move ${s.name} down`}
+                  title="Move this file's pages down"
+                  disabled={i === list.length - 1}
+                  onClick={() => st().moveSource(s.id, 1)}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                <button type="button" className={iconBtn} aria-label={`Remove ${s.name}`} title="Remove this file's pages (Undo brings them back)" onClick={() => st().removeSource(s.id)}>
+                  <Trash2 size={13} />
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
 
@@ -110,34 +162,31 @@ export function DocumentPanel() {
           <input
             type="checkbox"
             className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]"
-            checked={compress.on}
-            onChange={(e) => setCompress({ on: e.target.checked })}
+            checked={layout === 'letter'}
+            onChange={(e) => setLayout(e.target.checked ? 'letter' : 'original')}
           />
-          <span>
-            <span className="font-semibold text-ink">Compress (lossy)</span>
-            <span className="block text-xs text-ink-3">Turns every page into a JPEG. Text is no longer selectable.</span>
+          <span className="min-w-0">
+            <span className="font-semibold text-ink">Letter portrait pages</span>
+            <span className="block text-xs text-ink-3">Every page fits an 8.5 × 11 portrait page. Rotate turns what&apos;s on the page.</span>
           </span>
         </label>
-        <div className={clsx('mt-2 flex items-center gap-3', !compress.on && 'opacity-50')}>
-          <input
-            type="range"
-            min={0.3}
-            max={0.95}
-            step={0.05}
-            disabled={!compress.on}
-            value={compress.quality}
-            aria-label="JPEG quality"
-            className="min-w-0 flex-1 accent-[rgb(var(--accent))]"
-            onChange={(e) => setCompress({ quality: Number(e.target.value) })}
-          />
-          <span className="w-10 text-right text-xs tabular-nums text-ink-2">{Math.round(compress.quality * 100)}%</span>
-        </div>
+        {layout === 'letter' && (
+          <button
+            type="button"
+            className="btn mt-2 w-full border-accent/50 bg-accent/[0.07] text-accent hover:border-accent/50 hover:bg-accent/15"
+            title="Turns landscape pages so they fill the portrait page"
+            disabled={!pages.length}
+            onClick={() => st().turnWidePages()}
+          >
+            <RotateCcwSquare size={14} /> Turn wide pages sideways{wide ? ` (${wide})` : ''}
+          </button>
+        )}
       </div>
 
       {redacted > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg bg-surface-2 p-2 text-xs text-ink-2">
           <EyeOff size={14} className="mt-0.5 shrink-0" />
-          {redacted} {redacted === 1 ? 'page has' : 'pages have'} redactions. On export they become images, so the covered text is removed for good.
+          {redacted} {redacted === 1 ? 'page has' : 'pages have'} redactions. On export {redacted === 1 ? 'it becomes' : 'they become'} a picture: the covered text is removed for good, and ATS software cannot read {redacted === 1 ? 'that page' : 'those pages'}.
         </p>
       )}
     </Section>
@@ -147,11 +196,10 @@ export function DocumentPanel() {
 export function SplitPanel({ ex }: { ex: Exporter }) {
   const pages = usePdfStudio((s) => s.pages)
   const sel = usePdfStudio((s) => s.sel)
-  const sources = usePdfStudio((s) => s.sources)
   const [n, setN] = useState(2)
   const empty = pages.length === 0
   const busy = !!ex.busy
-  const multiSource = Object.keys(sources).length > 1
+  const multiSource = useMemo(() => usedSourceIds(pages).length > 1, [pages])
 
   return (
     <Section title="Split & extract" icon={<Scissors size={14} className="text-ink-3" />}>
@@ -178,8 +226,14 @@ export function SplitPanel({ ex }: { ex: Exporter }) {
         <button type="button" className="btn w-full" disabled={!multiSource || busy} onClick={() => void ex.splitSources()}>
           <Files size={14} /> Split by source file
         </button>
-        <button type="button" className="btn w-full" disabled={empty || busy} onClick={() => void ex.exportPngs()}>
-          <FileImage size={14} /> Download {sel.ids.length > 1 ? `${sel.ids.length} pages` : 'page'} as PNG
+        <button
+          type="button"
+          className="btn w-full"
+          disabled={!sel.ids.length || busy}
+          title={sel.ids.length ? undefined : 'Select the pages to save as images first'}
+          onClick={() => void ex.exportPngs()}
+        >
+          <FileImage size={14} /> Download {sel.ids.length > 1 ? `${sel.ids.length} selected pages` : 'selected page'} as PNG
         </button>
       </div>
       <p className="mt-2 text-xs text-ink-3">Splitting downloads several files; allow multiple downloads if your browser asks.</p>
@@ -258,7 +312,7 @@ export function FormsPanel() {
         <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" checked={flatten} onChange={(e) => setFlatten(e.target.checked)} />
         <span>
           <span className="font-semibold text-ink">Flatten form</span>
-          <span className="block text-xs text-ink-3">Bakes the values into the page so they can no longer be edited.</span>
+          <span className="block text-xs text-ink-3">Off (default): the form stays fillable, and values you type here are kept in it. On: bakes the values into the page as plain text and removes the fields.</span>
         </span>
       </label>
     </Section>

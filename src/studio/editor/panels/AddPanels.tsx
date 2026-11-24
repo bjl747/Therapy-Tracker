@@ -1,6 +1,6 @@
-// "Add things" panels: Text, Photos (city library), Brand (uploads), Elements.
+// "Add things" panels: Text, Photos (city library), Brand (logos + brand files), Elements. Uploads: UploadsPanel.tsx.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { ImageOff, Search, Trash2, Upload } from 'lucide-react'
 import type { ShapeEl, ShapeKind } from '../../engine/model'
 import { ensureFontsFor, FONT_PAIRS, FONTS } from '../../engine/fonts'
@@ -8,7 +8,11 @@ import { loadImage, sizeOf } from '../../engine/images'
 import { photoUrl, searchCities, thumbUrl } from '../../photos/cities'
 import { repo, type BrandAsset } from '../../data'
 import { useEditor } from '../store'
-import { addBadge, addImage, addShape, addText, addTextPair, toast, uploadError } from '../actions'
+import { addBadge, addFrame, addImage, addOrFill, addShape, addText, addTextPair, toast } from '../actions'
+import { FRAME_SHAPES } from '../../engine/frames'
+import { FrameIcon } from '../Inspector'
+import { assetDragProps } from '../assetDrag'
+import { useUi } from '../uiStore'
 import { useCityData } from '../hooks'
 import { Section, Skeleton } from '../ui'
 import { IconLibrary, LightEffects, MoreShapes, Stickers } from './ElementLibrary'
@@ -89,7 +93,7 @@ export function PhotosPanel() {
           <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-[13px] text-ink-3">
             <ImageOff size={22} />
             <div className="font-semibold text-ink-2">City photos are still being added</div>
-            <div>Upload your own in Brand, or drop an image onto the page.</div>
+            <div>Upload your own in Uploads, or drop an image onto the page.</div>
           </div>
         )}
         {state === 'ready' && !results.length && <div className="py-8 text-center text-[13px] text-ink-3">No city matches “{q}”</div>}
@@ -101,10 +105,13 @@ export function PhotosPanel() {
                 type="button"
                 disabled={readOnly}
                 title={`Photo: ${c.credit.author} · ${c.credit.license} · ${c.credit.provider}`}
-                className="group relative overflow-hidden rounded-lg border border-line bg-surface-3 hover:border-accent"
-                onClick={() => addImage(photoUrl(c.id), { w: c.width, h: c.height }, { credit: { ...c.credit }, name: `${c.city}, ${c.st}` })}
+                className="group relative touch-pan-y select-none overflow-hidden rounded-lg border border-line bg-surface-3 hover:border-accent"
+                {...assetDragProps(
+                  readOnly ? null : { src: photoUrl(c.id), w: c.width, h: c.height, preview: thumbUrl(c.id), opts: { credit: { ...c.credit }, name: `${c.city}, ${c.st}` } },
+                  () => addOrFill(photoUrl(c.id), { w: c.width, h: c.height }, { credit: { ...c.credit }, name: `${c.city}, ${c.st}` }),
+                )}
               >
-                <img src={thumbUrl(c.id)} alt={`${c.city}, ${c.state}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                <img src={thumbUrl(c.id)} alt={`${c.city}, ${c.state}`} loading="lazy" draggable={false} className="aspect-[4/3] w-full object-cover" />
                 <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/75 to-transparent px-1.5 pb-1 pt-4 text-left text-[11px] font-semibold text-white">
                   {c.city}, {c.st}
                 </span>
@@ -127,119 +134,95 @@ const BUILT_IN = [
 
 export function BrandPanel() {
   const readOnly = useEditor((s) => s.readOnly)
-  // admins open the editor with canEditLocked; only they may remove a brand file (everyone removes their own uploads)
+  // admins open the editor with canEditLocked; only they may remove a brand file
   const isAdmin = useEditor((s) => s.canEditLocked)
   const [assets, setAssets] = useState<BrandAsset[] | null>(null)
-  const [busy, setBusy] = useState(false)
-  const file = useRef<HTMLInputElement>(null)
-  // the person's own uploads first, then the brand files the admins added (in the browser store they are one list)
-  const refresh = () =>
-    Promise.all([repo.listUploads().catch(() => [] as BrandAsset[]), repo.listAssets().catch(() => [] as BrandAsset[])])
-      .then(([mine, brand]) => setAssets([...mine, ...brand]))
-      .catch(() => setAssets([]))
+  // brand files the admins added on Studio → Brand (a person's own photos are in Uploads since 2026-11-19)
+  const refresh = () => repo.listAssets().then((l) => setAssets(l.filter((a) => !a.ownerUid)), () => setAssets([]))
   useEffect(() => {
     void refresh()
   }, [])
-
-  const upload = async (files: FileList | null) => {
-    if (!files?.length) return
-    setBusy(true)
-    for (const f of [...files].slice(0, 12)) {
-      if (!f.type.startsWith('image/')) continue
-      try {
-        await repo.uploadImage(f)
-      } catch (e) {
-        toast(`“${f.name}”: ${uploadError(e)}`)
-      }
-    }
-    setBusy(false)
-    void refresh()
-  }
   const addStatic = async (url: string, name: string) => {
     const img = await loadImage(url)
     if (!img) return toast('That file is missing')
     const { w, h } = sizeOf(img)
     addImage(url, { w, h }, { fit: 'contain', name })
   }
-  const tile = 'group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2 p-2 hover:border-accent disabled:opacity-50'
+  const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({})
+  const sizeFor = (url: string) => sizes[url] ?? null
+  const tile = 'group relative flex aspect-square touch-pan-y select-none items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2 p-2 hover:border-accent disabled:opacity-50'
   const checker = { backgroundImage: 'repeating-conic-gradient(rgb(var(--surface-3)) 0 25%, transparent 0 50%)', backgroundSize: '14px 14px' }
+  // built-in logos: their size is read once the tile's picture loads, so a drag can place them at the click size
+  const noteSize = (url: string) => (e: SyntheticEvent<HTMLImageElement>) => {
+    const i = e.currentTarget
+    if (i.naturalWidth && !sizes[url]) setSizes((m) => ({ ...m, [url]: { w: i.naturalWidth, h: i.naturalHeight } }))
+  }
 
   return (
     <div>
       <Section title="Brand logos">
         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
-          {BUILT_IN.map((b) => (
-            // navy behind them: the official logos are transparent with white lettering
-            <button key={b.url} type="button" disabled={readOnly} className={tile} style={{ background: '#0C184D' }} title={b.name} onClick={() => void addStatic(b.url, b.name)}>
-              <img src={b.url} alt={b.name} className="max-h-full max-w-full object-contain" loading="lazy" />
-            </button>
-          ))}
+          {BUILT_IN.map((b) => {
+            const sz = sizeFor(b.url)
+            return (
+              // navy behind them: the official logos are transparent with white lettering
+              <button
+                key={b.url}
+                type="button"
+                disabled={readOnly}
+                className={tile}
+                style={{ background: '#0C184D' }}
+                title={b.name}
+                {...assetDragProps(sz && !readOnly ? { src: b.url, ...sz, preview: b.url, opts: { fit: 'contain', name: b.name } } : null, () => void addStatic(b.url, b.name))}
+              >
+                <img src={b.url} alt={b.name} className="max-h-full max-w-full object-contain" loading="lazy" draggable={false} onLoad={noteSize(b.url)} />
+              </button>
+            )
+          })}
         </div>
       </Section>
-      <Section
-        title="Your uploads"
-        right={
-          <button type="button" className="chip hover:border-accent/50" disabled={readOnly || busy} onClick={() => file.current?.click()}>
-            <Upload size={11} /> {busy ? 'Adding…' : 'Upload'}
-          </button>
-        }
-      >
-        <input
-          ref={file}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            void upload(e.target.files)
-            e.target.value = ''
-          }}
-        />
-        {assets === null ? (
-          <div className="grid grid-cols-3 gap-2">
-            {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} className="aspect-square w-full" />
-            ))}
-          </div>
-        ) : assets.length === 0 ? (
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => file.current?.click()}
-            className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-line px-3 py-6 text-center text-[12.5px] text-ink-3 hover:border-accent/60 hover:text-ink-2"
-          >
-            <Upload size={18} />
-            Upload logos and photos, or drop an image straight onto the page
-          </button>
-        ) : (
+      {!!assets?.length && (
+        <Section title="Brand files">
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))' }}>
-            {assets.map((a) => (
-              <div key={a.id} className="group relative">
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  className={`${tile} w-full`}
-                  style={checker}
-                  title={a.name}
-                  onClick={() => addImage(a.url, { w: a.w, h: a.h }, { fit: a.kind === 'logo' ? 'contain' : 'cover', name: a.name.replace(/\.[a-z0-9]+$/i, '') })}
-                >
-                  <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" loading="lazy" />
-                </button>
-                {(a.ownerUid || isAdmin) && !readOnly && (
+            {assets.map((a) => {
+              const opts = { fit: a.kind === 'logo' ? ('contain' as const) : ('cover' as const), name: a.name.replace(/\.[a-z0-9]+$/i, '') }
+              return (
+                <div key={a.id} className="group relative">
                   <button
                     type="button"
-                    title="Remove from uploads (designs that use it keep it)"
-                    aria-label={`Remove ${a.name} from uploads`}
-                    className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-black/60 text-white hover:bg-red-600 group-hover:flex"
-                    onClick={() => void (a.ownerUid ? repo.deleteUpload(a.id) : repo.deleteAsset(a.id)).then(refresh, () => toast('That couldn’t be removed'))}
+                    disabled={readOnly}
+                    className={`${tile} w-full`}
+                    style={checker}
+                    title={a.name}
+                    {...assetDragProps(readOnly ? null : { src: a.url, w: a.w, h: a.h, preview: a.url, opts }, () => addImage(a.url, { w: a.w, h: a.h }, opts))}
                   >
-                    <Trash2 size={12} />
+                    <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" loading="lazy" draggable={false} />
                   </button>
-                )}
-              </div>
-            ))}
+                  {isAdmin && !readOnly && (
+                    <button
+                      type="button"
+                      title="Remove this brand file (designs that use it keep it)"
+                      aria-label={`Remove ${a.name}`}
+                      className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-md bg-black/60 text-white hover:bg-red-600 group-hover:flex"
+                      onClick={() => void repo.deleteAsset(a.id).then(refresh, () => toast('That couldn’t be removed'))}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )}
+        </Section>
+      )}
+      <Section>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2.5 text-left text-[12.5px] text-ink-3 hover:border-accent/60 hover:text-ink-2"
+          onClick={() => useUi.getState().setLeftTab('uploads')}
+        >
+          <Upload size={14} className="shrink-0" /> Your own photos are in Uploads
+        </button>
       </Section>
     </div>
   )
@@ -294,6 +277,26 @@ export function ElementsPanel() {
             </button>
           ))}
         </div>
+      </Section>
+      <Section title="Photo frames">
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(58px, 1fr))' }}>
+          {FRAME_SHAPES.map((fs) => (
+            <button
+              key={fs.id}
+              type="button"
+              disabled={readOnly}
+              className={tile}
+              title={`${fs.label} frame: drop a photo into it`}
+              aria-label={`Add ${/^[aeiou]/i.test(fs.label) ? 'an' : 'a'} ${fs.label.toLowerCase()} photo frame`}
+              onClick={() => addFrame(fs.id, fs.label)}
+            >
+              <span className="text-ink-3 [&_svg]:h-7 [&_svg]:w-7">
+                <FrameIcon shape={fs.id} size={28} />
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[11.5px] text-ink-3">Drag a photo from Uploads or Photos onto a frame to fill it.</p>
       </Section>
       <LightEffects />
       <MoreShapes />

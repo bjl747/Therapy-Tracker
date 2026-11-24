@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Eye, EyeOff, GripVertical, Image as ImageIcon, Lock, Shapes, Sparkles, Type, Unlock } from 'lucide-react'
 import { isDrawn, type El } from '../../engine/model'
-import { currentPage, useEditor } from '../store'
+import { currentPage, lockedFor, useEditor } from '../store'
 import { elLabel } from '../lint'
 import { patchElRaw, reorderEl } from '../actions'
 
@@ -41,7 +41,7 @@ export function LayersPanel() {
       <div ref={list} className="relative" style={{ height: n * ROW }}>
         {rows.map((el, i) => {
           const selected = selection.includes(el.id)
-          const lockedOut = readOnly || (!!el.locked && !canEditLocked)
+          const lockedOut = readOnly || lockedFor(el, canEditLocked)
           const Icon = el.type === 'text' ? Type : el.type === 'image' ? ImageIcon : el.type === 'effect' ? Sparkles : Shapes
           // conditional row (roundup) switched off: listed, but dimmed and explained
           const waiting = !el.hidden && !!el.showIf && !isDrawn(el, fields ?? {})

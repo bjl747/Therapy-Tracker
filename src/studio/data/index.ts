@@ -29,6 +29,7 @@ export const repo: StudioRepo = {
     return p ? Promise.resolve(p) : current.getDesign(id)
   },
   saveDesign: (d, thumb) => current.saveDesign(d, thumb),
+  saveThumb: (id, thumb) => current.saveThumb(id, thumb),
   deleteDesign: (id) => current.deleteDesign(id),
   listTemplates: () => current.listTemplates(),
   saveTemplate: (t) => current.saveTemplate(t),
@@ -36,7 +37,7 @@ export const repo: StudioRepo = {
   listAssets: () => current.listAssets(),
   uploadAsset: (f, kind) => current.uploadAsset(f, kind),
   deleteAsset: (id) => current.deleteAsset(id),
-  listUploads: () => current.listUploads(),
+  listUploads: (o) => current.listUploads(o),
   uploadImage: (f) => current.uploadImage(f),
   deleteUpload: (id) => current.deleteUpload(id),
 }

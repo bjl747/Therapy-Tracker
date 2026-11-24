@@ -12,7 +12,8 @@ import {
   displaySize,
   rotationMatrix,
 } from './lib'
-import { forgetSource, getPdfDoc, getSourceBytes, getSourceMime } from './pdfjs'
+import { annRot, contentSize } from './annot'
+import { bumpIngestGeneration, forgetSource, getPdfDoc, getSourceBytes, getSourceMime } from './pdfjs'
 
 const imgCache = new Map<string, Promise<HTMLImageElement>>()
 
@@ -83,18 +84,30 @@ export async function paintAnnotations(ctx: CanvasRenderingContext2D, annots: An
       case 'image': {
         try {
           const img = await annotationImage(a.dataUrl)
-          ctx.drawImage(img, a.x, a.y, a.w, a.h)
+          const c = contentSize(a)
+          // the item's own upright frame, turned by `rot` about the box centre
+          ctx.translate(a.x + a.w / 2, a.y + a.h / 2)
+          ctx.rotate((annRot(a) * Math.PI) / 180)
+          ctx.drawImage(img, -c.w / 2, -c.h / 2, c.w, c.h)
         } catch {
           /* skip undecodable image */
         }
         break
       }
       case 'text': {
+        if (a.cover) {
+          // "Edit text": cover the original words first (base space, not turned, stays put)
+          ctx.fillStyle = a.coverColor ?? '#ffffff'
+          ctx.fillRect(a.cover.x, a.cover.y, a.cover.w, a.cover.h)
+        }
+        const c = contentSize(a)
+        ctx.translate(a.x + a.w / 2, a.y + a.h / 2)
+        ctx.rotate((annRot(a) * Math.PI) / 180)
         ctx.fillStyle = a.color
         ctx.font = `${a.bold ? 'bold ' : ''}${a.size}px Helvetica, Arial, sans-serif`
         ctx.textBaseline = 'alphabetic'
         a.text.split('\n').forEach((line, i) => {
-          ctx.fillText(line, a.x + TEXT_PAD, a.y + TEXT_PAD + a.size * BASELINE + i * a.size * LINE_HEIGHT)
+          ctx.fillText(line, -c.w / 2 + TEXT_PAD, -c.h / 2 + TEXT_PAD + a.size * BASELINE + i * a.size * LINE_HEIGHT)
         })
         break
       }
@@ -152,7 +165,9 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: 
 
 /* ------------------------------------------------------------- thumbnails */
 
+/** LRU of thumbnail object URLs: most recently used last. Old rotations / annotation states fall off the front. */
 const thumbCache = new Map<string, Promise<string>>()
+const THUMB_CAP = 240
 const queue: (() => void)[] = []
 let running = 0
 const MAX_PARALLEL = 3
@@ -164,21 +179,78 @@ function pump(): void {
   }
 }
 
+function revokeLater(p: Promise<string>): void {
+  // a card may still be showing it for a moment
+  void p.then((u) => setTimeout(() => URL.revokeObjectURL(u), 30_000)).catch(() => undefined)
+}
+
+function touch(key: string): Promise<string> | undefined {
+  const hit = thumbCache.get(key)
+  if (hit) {
+    thumbCache.delete(key)
+    thumbCache.set(key, hit)
+  }
+  return hit
+}
+
+function trimThumbs(): void {
+  while (thumbCache.size > THUMB_CAP) {
+    const [k, v] = thumbCache.entries().next().value as [string, Promise<string>]
+    thumbCache.delete(k)
+    revokeLater(v)
+  }
+}
+
+/** Short stable hash of a page's annotations (cached per array: the store replaces arrays on change). */
+const annHashes = new WeakMap<Annotation[], string>()
+function annHash(annots: Annotation[]): string {
+  if (!annots.length) return '0'
+  let h = annHashes.get(annots)
+  if (h === undefined) {
+    let x = 0x811c9dc5
+    const feed = (s: string) => {
+      for (let i = 0; i < s.length; i++) {
+        x ^= s.charCodeAt(i)
+        x = Math.imul(x, 0x01000193)
+      }
+    }
+    for (const a of annots) {
+      feed(JSON.stringify(a, (k, v) => (k === 'id' || k === 'dataUrl' ? undefined : v)))
+      if (a.kind === 'image') feed(a.dataUrl)
+    }
+    h = `${annots.length}.${(x >>> 0).toString(36)}`
+    annHashes.set(annots, h)
+  }
+  return h
+}
+
+/** newest thumbnail key asked for, per page id */
+const latestKey = new Map<string, string>()
+
 export function thumbKey(p: PageItem): string | null {
-  if (p.src.kind === 'pdf') return `${p.src.sourceId}:${p.src.index}:${(p.baseRot + p.rotation) % 360}`
-  if (p.src.kind === 'image') return `${p.src.sourceId}:img:${p.rotation}`
-  return null
+  const ann = annHash(p.annotations)
+  if (p.src.kind === 'pdf') return `${p.src.sourceId}:${p.src.index}:${(p.baseRot + p.rotation) % 360}:${ann}`
+  if (p.src.kind === 'image') return `${p.src.sourceId}:img:${p.rotation}:${ann}`
+  // blank pages only need a rendered thumbnail when something is drawn on them
+  return p.annotations.length ? `blank:${Math.round(p.w)}x${Math.round(p.h)}:${p.rotation}:${ann}` : null
 }
 
 export function getThumb(p: PageItem, width = 360): Promise<string> {
   const key = thumbKey(p)
   if (!key) return Promise.reject(new Error('no thumb'))
-  let cached = thumbCache.get(key)
+  latestKey.set(p.id, key)
+  let cached = touch(key)
   if (!cached) {
-    const plain: PageItem = { ...p, annotations: [] }
     cached = new Promise<string>((resolve, reject) => {
       queue.push(() => {
-        renderPage(plain, { width })
+        // the page changed again while this waited (e.g. an annotation being dragged): skip the stale render
+        if (latestKey.get(p.id) !== key) {
+          running -= 1
+          pump()
+          reject(new Error('superseded'))
+          return
+        }
+        renderPage(p, { width, annotations: true })
           .then((c) => canvasToBlob(c, 'image/jpeg', 0.82))
           .then((b) => resolve(URL.createObjectURL(b)), reject)
           .finally(() => {
@@ -188,15 +260,19 @@ export function getThumb(p: PageItem, width = 360): Promise<string> {
       })
       pump()
     })
-    cached.catch(() => thumbCache.delete(key))
+    const entry = cached
+    cached.catch(() => {
+      if (thumbCache.get(key) === entry) thumbCache.delete(key)
+    })
     thumbCache.set(key, cached)
+    trimThumbs()
   }
   return cached
 }
 
 export function peekThumb(p: PageItem): Promise<string> | undefined {
   const key = thumbKey(p)
-  return key ? thumbCache.get(key) : undefined
+  return key ? touch(key) : undefined
 }
 
 export function dropThumbsFor(sourceId: string): void {
@@ -215,9 +291,11 @@ export function releaseSource(sourceId: string): void {
   forgetSource(sourceId)
 }
 
-/** everything is cleared (PDF Studio reset): free every cached URL */
+/** everything is cleared (PDF Studio reset): free every cached URL and drop files that are still loading */
 export function releaseAllSources(): void {
+  bumpIngestGeneration()
   const ids = new Set<string>(srcImgCache.keys())
   for (const k of thumbCache.keys()) ids.add(k.slice(0, k.indexOf(':')))
   for (const id of ids) releaseSource(id)
+  latestKey.clear()
 }

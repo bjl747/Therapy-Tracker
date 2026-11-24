@@ -9,7 +9,7 @@ DOM/SVG overlay for everything that is editor-only.
 ```
 Editor.tsx        load / autosave / keyboard / clipboard / layout (wide or compact)
  ├─ TopBar        name, undo/redo, tools, zoom, lint badge, preview, download
- ├─ rail + panel  Fields · Text · Photos · Brand · Elements · Layers · Animate
+ ├─ rail + panel  Fields · Text · Photos · Uploads · Brand · Elements · Layers · Animate
  ├─ Stage         canvas + overlay + all pointer input
  ├─ PageStrip     live thumbnails, add / duplicate / delete / reorder
  └─ Inspector     contextual controls for the selection (or the page)
@@ -24,7 +24,7 @@ Drawing happens in a `useLayoutEffect`, i.e. in the same commit as the overlay.
 
 **Overlay.** An SVG (hover outline, selection frame, handles, pink snap guides,
 marquee) and a few DOM nodes (lock badges, size/position tooltip, floating
-selection toolbar, inline text editor, adjust-photo bar), all positioned in
+selection toolbar, inline text editor, Crop bar), all positioned in
 screen coordinates. Nothing in the overlay receives pointer events except
 elements marked `data-stage-ui`.
 
@@ -36,7 +36,7 @@ handle targets can be bigger for fingers. Pointer moves are coalesced to one
 
 **State.** `store.ts` (zustand) is the document + selection + history.
 `uiStore.ts` holds chrome state that must never be undoable or saved (open
-panel, pan, adjust-photo mode, clipboard, menus). `stageApi` exposes zoom
+panel, pan, Crop mode, drop target, clipboard, menus). `stageApi` exposes zoom
 commands from the mounted stage.
 
 ## Coordinate systems
@@ -63,7 +63,7 @@ Every continuous interaction is exactly one undo step:
 3. `endGesture()` pushes `gestureBase` once if anything changed.
 
 Used by: move, resize, rotate, Alt-drag duplicate (the copies are added inside
-the gesture), photo re-framing, inline text editing (begin on mount, end on
+the gesture), Crop (move, resize, trim), inline text editing (begin on mount, end on
 commit; an emptied text box is removed in the same step), label scrubbing,
 sliders, the native colour input, and each visit to a Fields input.
 `Esc` during a pointer gesture restores `gestureBase`. Gestures have a kind:
@@ -82,11 +82,13 @@ click (select / toggle / double-click to enter).
 | File | What |
 |---|---|
 | `Editor.tsx` | shell, load, autosave + thumbnail, shortcuts, clipboard events, layouts, toast |
-| `Stage.tsx` | canvas, overlay, gestures, wheel/pinch zoom, inline text, adjust photo, drop |
+| `Stage.tsx` | canvas, overlay, gestures, wheel/pinch zoom, inline text, Crop overlay, snap-into-frame outline and preview, drop |
 | `viewport.ts` | pure: view math, fit, zoom-around-cursor, handles, snapping helpers (tested) |
 | `store.ts` | document store, history, brand locks (unchanged) |
 | `uiStore.ts` | chrome state + `stageApi` |
-| `actions.ts` | commands: add text/image/shape/badge/light effect, clipboard, layers, auto-animate |
+| `actions.ts` | commands: add text/image/shape/badge/light effect, photo frames (`addFrame`, `replacePhoto`, `addOrFill`, `uploadIntoFrame`), clipboard, layers, auto-animate |
+| `assetDrag.ts` | drag a picture from a panel onto the page or into a frame (mouse / pen after 5 px, touch after a 300 ms hold) |
+| `cropMath.ts` | pure: Crop's move / resize / trim math in the frame's own space (tested) |
 | `clipboard.ts` | pure: copy / paste offsets, fresh ids, group remap (tested) |
 | `lint.ts` | pure: "Ready to post" checks (tested) |
 | `colors.ts` | pure: parsing, WCAG contrast, document palette, brand palette (tested) |
@@ -114,7 +116,7 @@ Engine addition: `RenderOptions.origin` (render.ts). Tests added for
 | Arrows · Shift+Arrows | nudge 1 px · 10 px |
 | Ctrl/Cmd+G · Shift+Ctrl/Cmd+G | group · ungroup |
 | ] / [ · Ctrl/Cmd+] / [ | forward / backward · front / back |
-| Enter | edit text / jump to its field / adjust photo |
+| Enter | edit text / jump to its field / Crop |
 | Esc | cancel drag → leave adjust mode → deselect (popups first: only the topmost closes) |
 | T | add a heading and start typing |
 | V · H · hold Space | select tool · hand tool · temporary pan |
@@ -154,7 +156,8 @@ write in the store.
 - Colours have no alpha slider (element opacity covers most cases); gradients
   are two stops.
 - GIF export is the current page at ≤720 px; ZIP is one PNG per page.
-- Photo re-framing works in "Fill" mode only.
+- Crop works in "Fill" mode only (the Crop bar offers to switch).
+- Template photo frames (`isTemplateFrame`, plus the `Photo frame` panel by name) are locked for non-admins: only the photo can be swapped or cropped (`setPhoto`).
 - The thumbnail is skipped (previous one kept) if a cross-origin image taints
   the canvas.
 - Leaving the tab mid-save relies on IndexedDB finishing the write; there is no

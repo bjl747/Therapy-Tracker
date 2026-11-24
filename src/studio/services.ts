@@ -5,13 +5,18 @@ import { fieldValue } from './engine/fields'
 import type { BoundImage } from './engine/render'
 import { photoUrl, resolveLocation, cityIndex } from './photos/cities'
 
+/** a pinned photo that is one of the person's uploads (its link) rather than a city id (Job Kit, BJ 2026-11-19).
+ *  Only web links and picture data: anything else is ignored. */
+export const isPhotoLink = (v: string | undefined): v is string => !!v && /^(https:\/\/|data:image\/(png|jpeg|webp|gif);)/.test(v)
+
 /**
  * A bound image (bind: 'location') shows the photo for that field's value.
- * Users can pin a different photo: fields[`${bind}__photo`] = city id.
+ * Users can pin a different photo: fields[`${bind}__photo`] = city id, or the link of one of their uploads.
  */
 export function resolveImage(el: ImageEl, fields: Record<string, string>): BoundImage | null {
   if (!el.bind) return null
   const pinned = fieldValue(fields, `${el.bind}__photo`)
+  if (isPhotoLink(pinned)) return { src: pinned, focus: { x: 0.5, y: 0.5 } }
   if (pinned) {
     const p = cityIndex().find((c) => c.id === pinned)
     if (p) return { src: photoUrl(p.id), focus: p.focus, credit: { ...p.credit } }

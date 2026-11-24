@@ -17,12 +17,28 @@ import {
   uid,
   type Design,
   type El,
+  type ImageEl,
   type Page,
   type PageBg,
 } from '../engine/model'
 import { aabb, alignMoves, distributeMoves, unionRect, type AlignKind } from '../engine/geometry'
 
 const MAX_HISTORY = 120
+
+/** A template's photo frame (BJ, 2026-11-19: "That frame shape, size and position should be locked. They can only
+ *  change out the photo and crop the photo in that frame."): a locked image, or the photo that follows a field (the
+ *  job post's city photo). For everyone but admins it can't be moved, resized, turned, reshaped or deleted, but its
+ *  photo can be swapped and cropped (`setPhoto`). */
+export const isTemplateFrame = (el: El): el is ImageEl => el.type === 'image' && (!!el.locked || !!el.bind)
+/** the navy panel the job post's city photo sits in (templates/jobPost.ts `photoFrame`): part of the template's
+ *  frame, so it is locked for recruiters with the photo (matched by its template name, so designs already saved get it) */
+export const isFramePanel = (el: El): boolean => el.type === 'shape' && el.name === 'Photo frame'
+/** locked for this person: brand locks, template photo frames (see isTemplateFrame) and their panel */
+export const lockedFor = (el: El, canEditLocked: boolean): boolean => !canEditLocked && (!!el.locked || isTemplateFrame(el) || isFramePanel(el))
+
+/** what a photo swap or a crop may change on an image, locked or not */
+export type PhotoPatch = Partial<Pick<ImageEl, 'src' | 'bind' | 'credit' | 'focus' | 'zoom' | 'cropFor' | 'fit' | 'locked' | 'name'>>
+const PHOTO_KEYS = new Set(['src', 'bind', 'credit', 'focus', 'zoom', 'cropFor', 'fit', 'locked', 'name'])
 
 export type Tool = 'select' | 'hand'
 export type GestureKind = 'pointer' | 'edit'
@@ -43,6 +59,9 @@ interface EditorState {
   canEditLocked: boolean
   /** read-only (access level 'view') */
   readOnly: boolean
+  /** the Fields (job details) may be changed even when read-only: a Job Kit post opened by someone with View
+   *  (BJ, 2026-11-19: "they still need to be able to edit in the form in that screen"). Never saved to the hub. */
+  editFields: boolean
   gestureBase: Design | null
   /** what kind of gesture is open: 'pointer' = drag / resize / rotate /
    *  slider scrub (autosave waits for it, undo is ignored during it);
@@ -50,7 +69,7 @@ interface EditorState {
    *  but autosave keeps saving while you type) */
   gestureKind: GestureKind | null
 
-  load: (d: Design, opts?: { canEditLocked?: boolean; readOnly?: boolean }) => void
+  load: (d: Design, opts?: { canEditLocked?: boolean; readOnly?: boolean; editFields?: boolean }) => void
   close: () => void
   markSaved: () => void
   setPage: (i: number) => void
@@ -67,6 +86,8 @@ interface EditorState {
 
   updateEl: (id: string, patch: Partial<El>, opts?: { transient?: boolean }) => void
   updateEls: (patches: Record<string, Partial<El>>, opts?: { transient?: boolean }) => void
+  /** swap or crop a photo: allowed on template frames too (only the photo keys in PhotoPatch are applied) */
+  setPhoto: (id: string, patch: PhotoPatch, opts?: { transient?: boolean }) => void
   addEl: (el: El, opts?: { select?: boolean }) => void
   deleteSelected: () => void
   duplicateSelected: () => void
@@ -121,7 +142,7 @@ export const useEditor = create<EditorState>((set, get) => {
     if (!p) return []
     return ids.filter((id) => {
       const el = p.elements.find((e) => e.id === id)
-      return el && (!el.locked || s.canEditLocked)
+      return el && !lockedFor(el, s.canEditLocked)
     })
   }
 
@@ -147,6 +168,7 @@ export const useEditor = create<EditorState>((set, get) => {
     dirty: false,
     canEditLocked: false,
     readOnly: false,
+    editFields: true,
     gestureBase: null,
     gestureKind: null,
 
@@ -162,6 +184,7 @@ export const useEditor = create<EditorState>((set, get) => {
         zoom: null,
         canEditLocked: opts?.canEditLocked ?? false,
         readOnly: opts?.readOnly ?? false,
+        editFields: !(opts?.readOnly ?? false) || !!opts?.editFields,
         gestureBase: null,
         gestureKind: null,
       }),
@@ -219,6 +242,24 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     updateEl: (id, patch, opts) => get().updateEls({ [id]: patch }, opts),
+    setPhoto: (id, patch, opts) => {
+      const s = get()
+      if (!s.design || s.readOnly) return
+      const clean = Object.fromEntries(Object.entries(patch).filter(([k]) => PHOTO_KEYS.has(k))) as PhotoPatch
+      commit(
+        mapPage(s.design, s.pageIndex, (p) => ({
+          ...p,
+          elements: p.elements.map((e) => {
+            if (e.id !== id || e.type !== 'image') return e
+            const next = { ...e, ...clean } as ImageEl
+            // keys set to undefined are removed (the hub's database refuses undefined)
+            for (const k of Object.keys(clean) as (keyof PhotoPatch)[]) if (clean[k] === undefined) delete next[k]
+            return next
+          }),
+        })),
+        opts,
+      )
+    },
     updateEls: (patches, opts) => {
       const s = get()
       if (!s.design) return
@@ -340,12 +381,16 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     setFields: (patch) => {
-      const { design: d, canEditLocked } = get()
-      if (!d) return
+      const s = get()
+      const { design: d, canEditLocked } = s
+      if (!d || !s.editFields) return
       const locked = new Set((d.fieldDefs ?? []).filter((f) => f.locked).map((f) => f.key))
       const allowed = canEditLocked ? patch : Object.fromEntries(Object.entries(patch).filter(([k]) => !locked.has(k)))
       if (!Object.keys(allowed).length) return
-      commit({ ...d, fields: { ...d.fields, ...allowed }, updatedAt: Date.now() })
+      const next = { ...d, fields: { ...d.fields, ...allowed }, updatedAt: Date.now() }
+      if (!s.readOnly) return commit(next)
+      // read-only with the form open (a View user's Job Kit post): the change stays on screen, nothing is saved
+      set(s.gestureBase ? { design: next } : { design: next, past: [...s.past, d].slice(-MAX_HISTORY), future: [] })
     },
     rename: (name) => {
       const d = get().design

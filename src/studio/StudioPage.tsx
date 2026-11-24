@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { StudioErrorBoundary } from './ui/ErrorBoundary'
 import { LayoutTemplate, Save, X } from 'lucide-react'
 import { configureRepo, isPreview, repo } from './data'
@@ -20,6 +20,7 @@ import type { Design } from './engine/model'
 import { useAuth } from '@/context/AuthContext'
 import { StudioHome } from './home/StudioHome'
 import { JobKit } from './kit/JobKit'
+import { kitBackPath, linkFor, useKitWriteBack, type KitLink } from './kit/link'
 import { Toaster } from './ui/toast'
 
 const Editor = lazy(() => import('./editor/Editor').then((m) => ({ default: m.Editor })))
@@ -37,9 +38,15 @@ function Skeleton() {
 
 function PdfRoute() {
   const nav = useNavigate()
+  // PDF Studio keeps its document while you move around the hub; it belongs to the signed-in person and is cleared
+  // when someone else (or nobody) opens it
+  const { user, can } = useAuth()
+  // PDF Studio has its own access switch (BJ, 2026-11-19); with PDF Studio alone there is no Studio home to go back to
+  if (can('studio_pdf') === 'none') return <Navigate to="/studio" replace />
+  const hasStudio = can('studio') !== 'none'
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <PdfStudio onBack={() => nav('/studio')} />
+      <PdfStudio onBack={hasStudio ? () => nav('/studio') : undefined} owner={user?.uid ?? ''} />
     </div>
   )
 }
@@ -50,12 +57,16 @@ function EditorRoute() {
   const { can, user, isManager } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [meta, setMeta] = useState<Design['source'] | null>(null)
+  // opened from the Job Kit: the form carries back to that job, and Back returns to it (kit/link.ts)
+  const [link, setLink] = useState<KitLink | null>(null)
+  useKitWriteBack(id)
   const [owner, setOwner] = useState<string | undefined>()
   useEffect(() => {
     void repo.getDesign(id).then(
       (d) => {
         setMeta(d?.source ?? null)
         setOwner(d?.ownerUid)
+        setLink(linkFor(d))
       },
       () => setMeta(null),
     )
@@ -72,10 +83,12 @@ function EditorRoute() {
         <Editor
           key={id}
           designId={id}
-          onExit={() => nav(preview ? '/studio/kit' : editingTemplate ? `/studio/templates?t=${meta!.templateId}` : '/studio/designs')}
+          onExit={() => nav(link ? kitBackPath(link) : preview ? '/studio/kit' : editingTemplate ? `/studio/templates?t=${meta!.templateId}` : '/studio/designs')}
           // only admins can move/edit brand-locked pieces and locked fields
           canEditLocked={isAdmin}
           readOnly={can('studio') !== 'edit' || othersDesign || preview}
+          // a Job Kit post opened with View: the picture stays as it is, but the job details can still be changed
+          editFields={preview}
         />
       </div>
     </div>
@@ -126,7 +139,9 @@ function TemplateEditBar({ templateId, size, designId }: { templateId: string; s
 
 export function StudioPage() {
   const { pathname } = useLocation()
-  const { user, isManager } = useAuth()
+  const { user, isManager, can } = useAuth()
+  // PDF Studio alone (no Studio access): every Studio page leads to the PDF tools
+  const hasStudio = can('studio') !== 'none'
   // before any child loads: the hub's database for a signed-in person (browser storage in demo mode). Managers, AMs and
   // admins list everyone's designs, recruiters their own (BJ, 2026-11-18: like candidates).
   configureRepo({ uid: user?.uid, seeAll: !!user && (isManager || user.role === 'account_manager' || user.role === 'admin') })
@@ -134,6 +149,12 @@ export function StudioPage() {
     <div className="flex flex-col flex-1 min-h-0 h-full overflow-auto">
       <StudioErrorBoundary resetKey={pathname}>
       <Suspense fallback={<Skeleton />}>
+        {!hasStudio ? (
+          <Routes>
+            <Route path="pdf" element={<PdfRoute />} />
+            <Route path="*" element={<Navigate to="/studio/pdf" replace />} />
+          </Routes>
+        ) : (
         <Routes>
           <Route index element={<StudioHome tab="create" />} />
           <Route path="designs" element={<StudioHome tab="designs" />} />
@@ -143,6 +164,7 @@ export function StudioPage() {
           <Route path="design/:id" element={<EditorRoute />} />
           <Route path="pdf" element={<PdfRoute />} />
         </Routes>
+        )}
       </Suspense>
       </StudioErrorBoundary>
       <Toaster />

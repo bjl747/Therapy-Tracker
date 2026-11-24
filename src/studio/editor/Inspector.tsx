@@ -35,11 +35,12 @@ import type { AlignKind } from '../engine/geometry'
 import { ensureFont, ensureFontsFor, FONTS } from '../engine/fonts'
 import { repo } from '../data'
 import { resolveImage } from '../services'
-import { currentPage, useEditor } from './store'
+import { currentPage, isTemplateFrame, lockedFor, useEditor } from './store'
+import { FRAME_SHAPES, frameCmds, frameD } from '../engine/frames'
 import { useUi } from './uiStore'
 import { useSelected } from './hooks'
 import { elLabel } from './lint'
-import { toast, uploadError } from './actions'
+import { enterElement, toast, uploadError, uploadIntoFrame } from './actions'
 import { parseColor } from './colors'
 import { ColorField, IconBtn, NumField, PopButton, Row, Section, Seg, SliderNum, Toggle } from './ui'
 
@@ -58,7 +59,9 @@ export function Inspector() {
   if (!design) return null
   if (!els.length) return <PageInspector />
 
-  const lockedOut = readOnly || (els.some((e) => e.locked) && !canEditLocked)
+  const lockedOut = readOnly || els.some((e) => lockedFor(e, canEditLocked))
+  // a template photo frame for a recruiter: only its photo can be swapped and cropped (BJ, 2026-11-19)
+  const frameOnly = !readOnly && !canEditLocked && els.length === 1 && isTemplateFrame(els[0])
   const type = common(els, (e) => e.type)
   const patchAll = (fn: (e: El) => Patch | null) => {
     const p: Record<string, Patch> = {}
@@ -78,13 +81,15 @@ export function Inspector() {
           <div className="eyebrow">{typeName}</div>
           <div className="truncate text-[13px] font-bold text-ink">{title}</div>
         </div>
-        {els.some((e) => e.locked) && (
+        {els.some((e) => e.locked || lockedFor(e, canEditLocked)) && (
           <span className="chip shrink-0" title={canEditLocked ? 'Brand locked for recruiters' : 'Locked by your brand template'}>
             <Lock size={11} /> Locked
           </span>
         )}
       </div>
-      {lockedOut ? (
+      {frameOnly ? (
+        <TemplateFrameSection el={els[0] as ImageEl} />
+      ) : lockedOut ? (
         <div className="p-4 text-[13px] leading-relaxed text-ink-2">
           {readOnly ? 'You have view-only access to this design.' : 'This element is part of the brand template, so its look can’t be changed. Use the Fields panel to change what it says or shows.'}
         </div>
@@ -99,6 +104,59 @@ export function Inspector() {
         </>
       )}
     </div>
+  )
+}
+
+// ── template photo frame (recruiters) ───────────────────────
+
+function TemplateFrameSection({ el }: { el: ImageEl }) {
+  const file = useRef<HTMLInputElement>(null)
+  return (
+    <Section title="Photo">
+      <p className="text-[12.5px] leading-relaxed text-ink-2">
+        This photo frame is part of the template, so it stays where it is. Swap the photo or crop it. You can also drag a photo from Uploads or Photos onto it.
+      </p>
+      {el.bind && (
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-surface-2/60 px-2.5 py-2 text-left text-[12px] text-ink-2 hover:border-accent/50"
+          onClick={() => useUi.getState().focusFieldKey(el.bind!)}
+        >
+          <MapPin size={13} className="shrink-0 text-accent" />
+          <span className="min-w-0 flex-1 truncate">Follows the “{el.bind.replace(/_/g, ' ')}” field</span>
+        </button>
+      )}
+      <div className="flex gap-1.5">
+        <button type="button" className="btn h-8 min-w-0 flex-1 px-2 text-[12.5px]" onClick={() => file.current?.click()}>
+          <Upload size={13} /> Replace
+        </button>
+        <button type="button" className="btn h-8 min-w-0 flex-1 px-2 text-[12.5px]" onClick={() => enterElement(el.id)}>
+          <Crop size={13} /> Crop
+        </button>
+      </div>
+      <input
+        ref={file}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) void uploadIntoFrame(f, el.id)
+          e.target.value = ''
+        }}
+      />
+    </Section>
+  )
+}
+
+/** small pictures of the frame shapes for the Shape picker */
+export function FrameIcon({ shape, size = 18 }: { shape: (typeof FRAME_SHAPES)[number]['id']; size?: number }) {
+  const w = shape === 'pill' ? 12 : shape === 'arch' ? 15 : 18
+  const h = 18
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" aria-hidden>
+      <path d={frameD(frameCmds(shape, w, h, 4), 1, (18 - w) / 2, 0)} fill="currentColor" />
+    </svg>
   )
 }
 
@@ -452,7 +510,7 @@ function ImageSection({ els, patchAll }: { els: ImageEl[]; patchAll: (fn: (e: El
           </button>
           {els.length === 1 && (
             <button type="button" className="btn h-8 min-w-0 flex-1 px-2 text-[12.5px]" onClick={() => useUi.getState().setCrop(el.id)}>
-              <Crop size={13} /> Adjust
+              <Crop size={13} /> Crop
             </button>
           )}
           <IconBtn title="Flip horizontally" active={!!el.flipX} onClick={() => img((e) => ({ flipX: !e.flipX }))}>
@@ -484,9 +542,18 @@ function ImageSection({ els, patchAll }: { els: ImageEl[]; patchAll: (fn: (e: El
             <SliderNum title="Photo zoom" min={1} max={3} step={0.01} precision={2} suffix="×" value={el.zoom} onChange={(v) => img(() => ({ zoom: v }))} />
           </Row>
         )}
-        <Row label="Corners">
-          <SliderNum title="Corner radius" min={0} max={Math.round(Math.min(el.w, el.h) / 2)} value={Math.min(el.radius, Math.round(Math.min(el.w, el.h) / 2))} onChange={(v) => img(() => ({ radius: v }))} />
+        <Row label="Shape">
+          <div className="flex min-w-0 flex-wrap gap-0.5">
+            {FRAME_SHAPES.map((fs) => (
+              <IconBtn key={fs.id} title={`${fs.label} frame`} active={(common(els, (e) => (e as ImageEl).frame ?? 'rect') ?? '') === fs.id} onClick={() => img(() => ({ frame: fs.id === 'rect' ? undefined : fs.id }))}>
+                <FrameIcon shape={fs.id} size={16} />
+              </IconBtn>
+            ))}
+          </div>
         </Row>
+        {(el.frame ?? 'rect') === 'rect' && <Row label="Corners">
+          <SliderNum title="Corner radius" min={0} max={Math.round(Math.min(el.w, el.h) / 2)} value={Math.min(el.radius, Math.round(Math.min(el.w, el.h) / 2))} onChange={(v) => img(() => ({ radius: v }))} />
+        </Row>}
         <Row label="Ken Burns">
           <Toggle label="Slow zoom in GIFs" checked={!!el.kenBurns} onChange={(v) => img(() => ({ kenBurns: v }))} />
           <span className="truncate text-[12px] text-ink-3">Slow zoom in GIFs</span>
